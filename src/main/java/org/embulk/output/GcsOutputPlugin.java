@@ -62,6 +62,10 @@ public class GcsOutputPlugin implements FileOutputPlugin
         @Config("file_ext")
         public String getFileNameExtension();
 
+        @Config("content_type")
+        @ConfigDefault("\"application/octet-stream\"")
+        public String getContentType();
+
         @Config("service_account_email")
         public String getServiceAccountEmail();
 
@@ -154,6 +158,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
         private final String bucket;
         private final String pathPrefix;
         private final String pathSuffix;
+        private final String contentType;
         private final List<String> fileNames = new ArrayList<>();
 
         private int fileIndex = 0;
@@ -168,6 +173,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             this.bucket = task.getBucket();
             this.pathPrefix = task.getPathPrefix();
             this.pathSuffix = task.getFileNameExtension();
+            this.contentType = task.getContentType();
         }
 
         public void nextFile()
@@ -177,7 +183,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             String path = pathPrefix + String.format(".%03d.%02d.", taskIndex, fileIndex) + pathSuffix;
             logger.info("Uploading bucket '{}' path '{}'", bucket, path);
             fileNames.add(path);
-            currentUpload = startUpload(path, currentStream);
+            currentUpload = startUpload(path, contentType, currentStream);
             fileIndex++;
         }
 
@@ -239,10 +245,10 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         }
 
-        private Future<Void> startUpload(String path, PipedOutputStream output) {
+        private Future<Void> startUpload(String path, String contentType, PipedOutputStream output) {
             try {
                 PipedInputStream inputStream = new PipedInputStream(output);
-                InputStreamContent mediaContent = new InputStreamContent("application/octet-stream", inputStream);
+                InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
                 StorageObject objectMetadata = new StorageObject();
                 objectMetadata.setName(path);
 

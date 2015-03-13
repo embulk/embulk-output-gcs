@@ -14,9 +14,10 @@
 - **bucket**: Google Cloud Storage bucket name (string, required)
 - **path_prefix**: Prefix of output keys (string, required)
 - **file_ext**: Extention of output file (string, required)
+- **content_type**: content type of output file (string, optional, default value is "application/octet-stream")
 - **service_account_email**: Google Cloud Platform service account email (string, required)
 - **p12_keyfile_path**: Private key file fullpath of Google Cloud Platform service account (string, required)
-- **application_name**: Application name, anything you like (string, optional)
+- **application_name**: Application name, anything you like (string, optional, default value is "embulk-output-gcs")
 
 ## Example
 
