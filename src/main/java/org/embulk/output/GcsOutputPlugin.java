@@ -15,7 +15,6 @@ import com.google.api.services.storage.Storage;
 import com.google.api.services.storage.StorageScopes;
 import com.google.api.services.storage.model.Bucket;
 import com.google.api.services.storage.model.StorageObject;
-import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 
@@ -24,9 +23,8 @@ import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.security.GeneralSecurityException;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.ArrayList;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
@@ -41,10 +39,10 @@ import org.embulk.config.ConfigSource;
 import org.embulk.config.Task;
 import org.embulk.config.TaskSource;
 import org.embulk.spi.Buffer;
-import org.embulk.spi.Column;
 import org.embulk.spi.Exec;
 import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.TransactionalFileOutput;
+
 import org.slf4j.Logger;
 
 public class GcsOutputPlugin implements FileOutputPlugin
@@ -59,8 +57,10 @@ public class GcsOutputPlugin implements FileOutputPlugin
         public String getBucket();
 
         @Config("path_prefix")
-        @ConfigDefault("\"\"")
         public String getPathPrefix();
+
+        @Config("file_ext")
+        public String getFileNameExtension();
 
         @Config("service_account_email")
         public String getServiceAccountEmail();
@@ -80,7 +80,6 @@ public class GcsOutputPlugin implements FileOutputPlugin
     {
         PluginTask task = config.loadConfig(PluginTask.class);
 
-        Storage client = createClient(task);
         control.run(task.dump());
         return Exec.newConfigDiff();
     }
@@ -101,12 +100,12 @@ public class GcsOutputPlugin implements FileOutputPlugin
     }
 
     @Override
-    public TransactionalFileOutput open(TaskSource taskSource, int taskIndex)
+    public TransactionalFileOutput open(TaskSource taskSource, final int taskIndex)
     {
         PluginTask task = taskSource.loadTask(PluginTask.class);
 
         Storage client = createClient(task);
-        return new GcsFileOutput(task, client, taskIndex);
+        return new TransactionalGcsFileOutput(task, client, taskIndex);
     }
 
     /**
@@ -148,40 +147,45 @@ public class GcsOutputPlugin implements FileOutputPlugin
         }
     }
 
-    static class GcsFileOutput implements TransactionalFileOutput
+    static class TransactionalGcsFileOutput implements TransactionalFileOutput
     {
+        private final int taskIndex;
         private final Storage client;
         private final String bucket;
         private final String pathPrefix;
-        private final int taskIndex;
-        private int seqId;
-        private int callCount;
-        private PipedOutputStream currentStream;
-        private Future<Void> currentUpload;
+        private final String pathSuffix;
+        private final List<String> fileNames = new ArrayList<>();
 
-        GcsFileOutput(PluginTask task, Storage client, int taskIndex)
+        private int fileIndex = 0;
+        private int callCount = 0;
+        private PipedOutputStream currentStream = null;
+        private Future<Void> currentUpload = null;
+
+        TransactionalGcsFileOutput(PluginTask task, Storage client, int taskIndex)
         {
-            this.client = client;
             this.taskIndex = taskIndex;
+            this.client = client;
             this.bucket = task.getBucket();
             this.pathPrefix = task.getPathPrefix();
-            this.seqId = 0;
-            this.currentStream = null;
+            this.pathSuffix = task.getFileNameExtension();
         }
 
         public void nextFile()
         {
             closeCurrentUpload();
             currentStream = new PipedOutputStream();
-            currentUpload = startUpload(currentStream, taskIndex, seqId);
-            seqId++;
+            String path = pathPrefix + String.format(".%03d.%02d.", taskIndex, fileIndex) + pathSuffix;
+            logger.info("Uploading bucket '{}' path '{}'", bucket, path);
+            fileNames.add(path);
+            currentUpload = startUpload(path, currentStream);
+            fileIndex++;
         }
 
         @Override
         public void add(Buffer buffer)
         {
             try {
-                logger.info("taskIndex: {}, count: {}", taskIndex, callCount);
+                logger.debug("#add called {} times for taskIndex {}", callCount, taskIndex);
                 currentStream.write(buffer.array(), buffer.offset(), buffer.limit());
                 callCount++;
             } catch (IOException ex) {
@@ -194,6 +198,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
         @Override
         public void finish()
         {
+            closeCurrentUpload();
         }
 
         @Override
@@ -210,7 +215,10 @@ public class GcsOutputPlugin implements FileOutputPlugin
         @Override
         public CommitReport commit()
         {
-            return Exec.newCommitReport();
+            CommitReport report = Exec.newCommitReport();
+            report.set("bucket", bucket);
+            report.set("file_names", fileNames);
+            return report;
         }
 
         private void closeCurrentUpload() {
@@ -231,20 +239,17 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         }
 
-        private Future<Void> startUpload(PipedOutputStream output, int taskIndex, int seqId) {
+        private Future<Void> startUpload(String path, PipedOutputStream output) {
             try {
                 PipedInputStream inputStream = new PipedInputStream(output);
                 InputStreamContent mediaContent = new InputStreamContent("application/octet-stream", inputStream);
                 StorageObject objectMetadata = new StorageObject();
-                String filename = String.format("%s%s%d_%d.csv", pathPrefix, "test", taskIndex, seqId);
-                objectMetadata.setName(filename);
-                logger.info(filename);
+                objectMetadata.setName(path);
 
                 final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
                 return executor.submit(new Callable<Void>() {
                     @Override public Void call() throws InterruptedException {
                         try {
-                            logger.info("upload start");
                             insert.execute();
                             return null;
                         } catch (IOException ex) {

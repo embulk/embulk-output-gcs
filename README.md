@@ -12,7 +12,8 @@
 ## Configuration
 
 - **bucket**: Google Cloud Storage bucket name (string, required)
-- **path_prefix**: Prefix of target keys (string, optional)
+- **path_prefix**: Prefix of output keys (string, required)
+- **file_ext**: Extention of output file (string, required)
 - **service_account_email**: Google Cloud Platform service account email (string, required)
 - **p12_keyfile_path**: Private key file fullpath of Google Cloud Platform service account (string, required)
 - **application_name**: Application name, anything you like (string, optional)
@@ -23,12 +24,10 @@
 out:
   type: gcs
   bucket: your-gcs-bucket-name
-  path_prefix: logs/
+  path_prefix: logs/out
+  file_ext: csv
   service_account_email: 'XYZ@developer.gserviceaccount.com'
   p12_keyfile_path: '/path/to/private/key.p12'
-  application_name: embulk-output-gcs
-
-  # Set formatter if you need
   formatter:
     type: csv
     encoding: UTF-8
