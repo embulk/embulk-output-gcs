@@ -4,7 +4,7 @@ import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
-import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.apache.ApacheHttpTransport;
 import com.google.api.client.http.HttpTransport;
 import com.google.api.client.http.InputStreamContent;
 import com.google.api.client.json.JsonFactory;
@@ -139,16 +139,12 @@ public class GcsOutputPlugin implements FileOutputPlugin
 
     private Storage createClient(final PluginTask task)
     {
-        try {
-            HttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-            Credential credential = createCredential(task, httpTransport);
-            Storage client = new Storage.Builder(httpTransport, JSON_FACTORY, credential)
-                .setApplicationName(task.getApplicationName())
-                .build();
-            return client;
-        } catch (GeneralSecurityException|IOException e) {
-            throw Throwables.propagate(e);
-        }
+        HttpTransport httpTransport = new ApacheHttpTransport.Builder().build();
+        Credential credential = createCredential(task, httpTransport);
+        Storage client = new Storage.Builder(httpTransport, JSON_FACTORY, credential)
+            .setApplicationName(task.getApplicationName())
+            .build();
+        return client;
     }
 
     static class TransactionalGcsFileOutput implements TransactionalFileOutput
