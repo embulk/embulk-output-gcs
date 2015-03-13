@@ -59,6 +59,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
         public String getBucket();
 
         @Config("path_prefix")
+        @ConfigDefault("\"\"")
         public String getPathPrefix();
 
         @Config("service_account_email")
@@ -68,6 +69,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
         public String getP12KeyfilePath();
 
         @Config("application_name")
+        @ConfigDefault("\"embulk-output-gcs\"")
         public String getApplicationName();
     }
 
@@ -192,7 +194,6 @@ public class GcsOutputPlugin implements FileOutputPlugin
         @Override
         public void finish()
         {
-            logger.info('finished');
         }
 
         @Override

@@ -15,7 +15,7 @@
 - **path_prefix**: Prefix of target keys (string, optional)
 - **service_account_email**: Google Cloud Platform service account email (string, required)
 - **p12_keyfile_path**: Private key file fullpath of Google Cloud Platform service account (string, required)
-- **application_name**: Application name, anything you like (string)
+- **application_name**: Application name, anything you like (string, optional)
 
 ## Example
 
