@@ -253,6 +253,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
                 objectMetadata.setName(path);
 
                 final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
+                insert.setDisableGZipContent(true);
                 return executor.submit(new Callable<Void>() {
                     @Override public Void call() throws InterruptedException {
                         try {
