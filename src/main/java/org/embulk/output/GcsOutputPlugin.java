@@ -41,7 +41,6 @@ import java.util.concurrent.Future;
 public class GcsOutputPlugin implements FileOutputPlugin {
 	private static final Logger logger = Exec.getLogger(GcsOutputPlugin.class);
 	private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
-	private static final ExecutorService executor = Executors.newCachedThreadPool();
 
 	public interface PluginTask extends Task {
 		@Config("bucket")
@@ -99,27 +98,25 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		return new TransactionalGcsFileOutput(task, client, taskIndex);
 	}
 
-	/**
-	 * @see https://developers.google.com/accounts/docs/OAuth2ServiceAccount#authorizingrequests
-	 */
 	private GoogleCredential createCredential(final PluginTask task, final HttpTransport httpTransport) {
-		GoogleCredential cred = null;
 		try {
+			// @see https://developers.google.com/accounts/docs/OAuth2ServiceAccount#authorizingrequests
 			// @see https://cloud.google.com/compute/docs/api/how-tos/authorization
 			// @see https://developers.google.com/resources/api-libraries/documentation/storage/v1/java/latest/com/google/api/services/storage/STORAGE_SCOPE.html
-			cred = new GoogleCredential.Builder()
+			GoogleCredential cred = new GoogleCredential.Builder()
 					.setTransport(httpTransport)
 					.setJsonFactory(JSON_FACTORY)
 					.setServiceAccountId(task.getServiceAccountEmail())
 					.setServiceAccountScopes(ImmutableList.of(StorageScopes.DEVSTORAGE_READ_WRITE))
 					.setServiceAccountPrivateKeyFromP12File(new File(task.getP12KeyfilePath()))
 					.build();
-		} catch (IOException e) {
-			logger.warn(String.format("Could not load client secrets file %s", task.getP12KeyfilePath()));
-		} catch (GeneralSecurityException e) {
-			logger.warn("Google Authentication was failed");
-		} finally {
 			return cred;
+		} catch (IOException ex) {
+			logger.error(String.format("Could not load client secrets file %s", task.getP12KeyfilePath()));
+			throw Throwables.propagate(ex);
+		} catch (GeneralSecurityException ex) {
+			logger.error("Google Authentication was failed");
+			throw Throwables.propagate(ex);
 		}
 	}
 
@@ -144,7 +141,7 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		private int fileIndex = 0;
 		private int callCount = 0;
 		private PipedOutputStream currentStream = null;
-		private Future<Void> currentUpload = null;
+		private Future<StorageObject> currentUpload = null;
 
 		TransactionalGcsFileOutput(PluginTask task, Storage client, int taskIndex) {
 			this.taskIndex = taskIndex;
@@ -159,7 +156,7 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 			closeCurrentUpload();
 			currentStream = new PipedOutputStream();
 			String path = pathPrefix + String.format(".%03d.%02d.", taskIndex, fileIndex) + pathSuffix;
-			logger.info("Uploading bucket '{}' path '{}'", bucket, path);
+			logger.info("Uploading '{}/{}'", bucket, path);
 			fileNames.add(path);
 			currentUpload = startUpload(path, contentType, currentStream);
 			fileIndex++;
@@ -195,7 +192,6 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		@Override
 		public CommitReport commit() {
 			CommitReport report = Exec.newCommitReport();
-			report.set("bucket", bucket);
 			report.set("file_names", fileNames);
 			return report;
 		}
@@ -208,7 +204,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 				}
 
 				if (currentUpload != null) {
-					currentUpload.get();
+					StorageObject obj = currentUpload.get();
+					logger.info("Uploaded '{}/{}' to {}bytes", obj.getBucket(), obj.getName(), obj.getSize());
 					currentUpload = null;
 				}
 
@@ -218,23 +215,28 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 			}
 		}
 
-		private Future<Void> startUpload(String path, String contentType, PipedOutputStream output) {
+		private Future<StorageObject> startUpload(String path, String contentType, PipedOutputStream output) {
 			try {
+				final ExecutorService executor = Executors.newCachedThreadPool();
+
 				PipedInputStream inputStream = new PipedInputStream(output);
 				InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
+				mediaContent.setCloseInputStream(true);
+
 				StorageObject objectMetadata = new StorageObject();
 				objectMetadata.setName(path);
 
 				final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
 				insert.setDisableGZipContent(true);
-				return executor.submit(new Callable<Void>() {
+				return executor.submit(new Callable<StorageObject>() {
 					@Override
-					public Void call() throws InterruptedException {
+					public StorageObject call() throws InterruptedException {
 						try {
-							insert.execute();
-							return null;
+							return insert.execute();
 						} catch (IOException ex) {
 							throw Throwables.propagate(ex);
+						} finally {
+							executor.shutdown();
 						}
 					}
 				});
