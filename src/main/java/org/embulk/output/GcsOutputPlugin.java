@@ -52,6 +52,10 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		@Config("file_ext")
 		public String getFileNameExtension();
 
+		@Config("sequence_format")
+		@ConfigDefault("\".%03d.%02d\"")
+		public String getSequenceFormat();
+
 		@Config("content_type")
 		@ConfigDefault("\"application/octet-stream\"")
 		public String getContentType();
@@ -135,8 +139,9 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		private final String bucket;
 		private final String pathPrefix;
 		private final String pathSuffix;
+		private final String sequenceFormat;
 		private final String contentType;
-		private final List<String> fileNames = new ArrayList<>();
+		private final List<StorageObject> storageObjects = new ArrayList<>();
 
 		private int fileIndex = 0;
 		private int callCount = 0;
@@ -149,15 +154,15 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 			this.bucket = task.getBucket();
 			this.pathPrefix = task.getPathPrefix();
 			this.pathSuffix = task.getFileNameExtension();
+			this.sequenceFormat = task.getSequenceFormat();
 			this.contentType = task.getContentType();
 		}
 
 		public void nextFile() {
 			closeCurrentUpload();
 			currentStream = new PipedOutputStream();
-			String path = pathPrefix + String.format(".%03d.%02d.", taskIndex, fileIndex) + pathSuffix;
+			String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
 			logger.info("Uploading '{}/{}'", bucket, path);
-			fileNames.add(path);
 			currentUpload = startUpload(path, contentType, currentStream);
 			fileIndex++;
 		}
@@ -192,7 +197,7 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		@Override
 		public CommitReport commit() {
 			CommitReport report = Exec.newCommitReport();
-			report.set("file_names", fileNames);
+			report.set("files", storageObjects);
 			return report;
 		}
 
@@ -205,6 +210,7 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 
 				if (currentUpload != null) {
 					StorageObject obj = currentUpload.get();
+					storageObjects.add(obj);
 					logger.info("Uploaded '{}/{}' to {}bytes", obj.getBucket(), obj.getName(), obj.getSize());
 					currentUpload = null;
 				}

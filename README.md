@@ -26,7 +26,7 @@ out:
   type: gcs
   bucket: your-gcs-bucket-name
   path_prefix: logs/out
-  file_ext: csv
+  file_ext: .csv
   service_account_email: 'XYZ@developer.gserviceaccount.com'
   p12_keyfile_path: '/path/to/private/key.p12'
   formatter:
