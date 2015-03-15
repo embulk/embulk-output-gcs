@@ -76,16 +76,15 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 	                              int taskCount,
 	                              FileOutputPlugin.Control control) {
 		PluginTask task = config.loadConfig(PluginTask.class);
-
-		control.run(task.dump());
-		return Exec.newConfigDiff();
+		return resume(task.dump(), taskCount, control);
 	}
 
 	@Override
 	public ConfigDiff resume(TaskSource taskSource,
 	                         int taskCount,
 	                         FileOutputPlugin.Control control) {
-		throw new UnsupportedOperationException("gcs output plugin does not support resuming");
+		control.run(taskSource);
+		return Exec.newConfigDiff();
 	}
 
 	@Override

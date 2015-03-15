@@ -6,7 +6,7 @@
 
 * **Plugin type**: file output
 * **Load all or nothing**: no
-* **Resume supported**: no
+* **Resume supported**: yes
 * **Cleanup supported**: no
 
 ## Configuration
