@@ -1,6 +1,6 @@
 # Google Cloud Storage output plugin for Embulk
 
-**CAUTION: This plugin is currently experimental. DO NOT USE IN PRODUCTION**.
+Google Cloud Storage output plugin for [Embulk](https://github.com/embulk/embulk).
 
 ## Overview
 
