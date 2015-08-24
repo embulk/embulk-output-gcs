@@ -12,7 +12,7 @@ import com.google.api.services.storage.StorageScopes;
 import com.google.api.services.storage.model.StorageObject;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
-import org.embulk.config.CommitReport;
+import org.embulk.config.TaskReport;
 import org.embulk.config.Config;
 import org.embulk.config.ConfigDefault;
 import org.embulk.config.ConfigDiff;
@@ -90,7 +90,7 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 	@Override
 	public void cleanup(TaskSource taskSource,
 	                    int taskCount,
-	                    List<CommitReport> successCommitReports) {
+	                    List<TaskReport> successTaskReports) {
 	}
 
 	@Override
@@ -194,8 +194,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		}
 
 		@Override
-		public CommitReport commit() {
-			CommitReport report = Exec.newCommitReport();
+		public TaskReport commit() {
+			TaskReport report = Exec.newTaskReport();
 			report.set("files", storageObjects);
 			return report;
 		}
