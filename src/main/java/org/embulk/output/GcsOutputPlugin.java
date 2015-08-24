@@ -44,31 +44,31 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 
 	public interface PluginTask extends Task {
 		@Config("bucket")
-		public String getBucket();
+		String getBucket();
 
 		@Config("path_prefix")
-		public String getPathPrefix();
+		String getPathPrefix();
 
 		@Config("file_ext")
-		public String getFileNameExtension();
+		String getFileNameExtension();
 
 		@Config("sequence_format")
 		@ConfigDefault("\".%03d.%02d\"")
-		public String getSequenceFormat();
+		String getSequenceFormat();
 
 		@Config("content_type")
 		@ConfigDefault("\"application/octet-stream\"")
-		public String getContentType();
+		String getContentType();
 
 		@Config("service_account_email")
-		public String getServiceAccountEmail();
+		String getServiceAccountEmail();
 
 		@Config("p12_keyfile_path")
-		public String getP12KeyfilePath();
+		String getP12KeyfilePath();
 
 		@Config("application_name")
 		@ConfigDefault("\"embulk-output-gcs\"")
-		public String getApplicationName();
+		String getApplicationName();
 	}
 
 	@Override
