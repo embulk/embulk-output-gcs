@@ -60,3 +60,7 @@ Gem::Specification.new do |spec|
 end
 /$)
 }
+
+task gempush << {
+  "gem push pkg/embulk-output-gcs-${project.version}.gem".execute().waitFor()
+}
