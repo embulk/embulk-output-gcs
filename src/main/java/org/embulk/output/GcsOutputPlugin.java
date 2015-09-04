@@ -1,22 +1,16 @@
 package org.embulk.output;
 
-import com.google.api.client.auth.oauth2.Credential;
-import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
-import com.google.api.client.http.HttpTransport;
 import com.google.api.client.http.InputStreamContent;
-import com.google.api.client.http.apache.ApacheHttpTransport;
-import com.google.api.client.json.JsonFactory;
-import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.services.storage.Storage;
-import com.google.api.services.storage.StorageScopes;
 import com.google.api.services.storage.model.StorageObject;
+import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
 import org.embulk.config.TaskReport;
 import org.embulk.config.Config;
 import org.embulk.config.ConfigDefault;
 import org.embulk.config.ConfigDiff;
 import org.embulk.config.ConfigSource;
+import org.embulk.config.ConfigException;
 import org.embulk.config.Task;
 import org.embulk.config.TaskSource;
 import org.embulk.spi.Buffer;
@@ -25,7 +19,6 @@ import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.TransactionalFileOutput;
 import org.slf4j.Logger;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
@@ -40,7 +33,6 @@ import java.util.concurrent.Future;
 
 public class GcsOutputPlugin implements FileOutputPlugin {
 	private static final Logger logger = Exec.getLogger(GcsOutputPlugin.class);
-	private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
 
 	public interface PluginTask extends Task {
 		@Config("bucket")
@@ -60,11 +52,17 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		@ConfigDefault("\"application/octet-stream\"")
 		String getContentType();
 
+		@Config("auth_method")
+		@ConfigDefault("\"private_key\"")
+		AuthMethod getAuthMethod();
+
 		@Config("service_account_email")
-		String getServiceAccountEmail();
+		@ConfigDefault("null")
+		Optional<String> getServiceAccountEmail();
 
 		@Config("p12_keyfile_path")
-		String getP12KeyfilePath();
+		@ConfigDefault("null")
+		Optional<String> getP12KeyfilePath();
 
 		@Config("application_name")
 		@ConfigDefault("\"embulk-output-gcs\"")
@@ -101,34 +99,15 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		return new TransactionalGcsFileOutput(task, client, taskIndex);
 	}
 
-	private GoogleCredential createCredential(final PluginTask task, final HttpTransport httpTransport) {
-		try {
-			// @see https://developers.google.com/accounts/docs/OAuth2ServiceAccount#authorizingrequests
-			// @see https://cloud.google.com/compute/docs/api/how-tos/authorization
-			// @see https://developers.google.com/resources/api-libraries/documentation/storage/v1/java/latest/com/google/api/services/storage/STORAGE_SCOPE.html
-			GoogleCredential cred = new GoogleCredential.Builder()
-					.setTransport(httpTransport)
-					.setJsonFactory(JSON_FACTORY)
-					.setServiceAccountId(task.getServiceAccountEmail())
-					.setServiceAccountScopes(ImmutableList.of(StorageScopes.DEVSTORAGE_READ_WRITE))
-					.setServiceAccountPrivateKeyFromP12File(new File(task.getP12KeyfilePath()))
-					.build();
-			return cred;
-		} catch (IOException ex) {
-			logger.error(String.format("Could not load client secrets file %s", task.getP12KeyfilePath()));
-			throw Throwables.propagate(ex);
-		} catch (GeneralSecurityException ex) {
-			logger.error("Google Authentication was failed");
-			throw Throwables.propagate(ex);
-		}
-	}
-
 	private Storage createClient(final PluginTask task) {
-		HttpTransport httpTransport = new ApacheHttpTransport.Builder().build();
-		Credential credential = createCredential(task, httpTransport);
-		Storage client = new Storage.Builder(httpTransport, JSON_FACTORY, credential)
-				.setApplicationName(task.getApplicationName())
-				.build();
+		Storage client = null;
+		try {
+			GcsAuthentication auth = new GcsAuthentication(task.getAuthMethod().getString(), task.getServiceAccountEmail(), task.getP12KeyfilePath(), task.getApplicationName());
+			client = auth.getGcsClient(task.getBucket());
+		} catch (GeneralSecurityException | IOException ex) {
+			throw new ConfigException(ex);
+		}
+
 		return client;
 	}
 
@@ -248,6 +227,24 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 			} catch (IOException ex) {
 				throw Throwables.propagate(ex);
 			}
+		}
+	}
+
+	public enum AuthMethod
+	{
+		private_key("private_key"),
+		compute_engine("compute_engine");
+
+		private final String string;
+
+		AuthMethod(String string)
+		{
+			this.string = string;
+		}
+
+		public String getString()
+		{
+			return string;
 		}
 	}
 }
