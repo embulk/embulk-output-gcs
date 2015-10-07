@@ -1,6 +1,7 @@
 package org.embulk.output;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 
 import com.google.api.client.http.apache.ApacheHttpTransport;
@@ -8,6 +9,8 @@ import com.google.api.services.storage.model.Objects;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import java.security.GeneralSecurityException;
+import java.util.Collections;
+
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
 import com.google.api.client.googleapis.compute.ComputeCredential;
 import com.google.api.client.http.HttpTransport;
@@ -25,16 +28,19 @@ public class GcsAuthentication
 	private final Logger log = Exec.getLogger(GcsAuthentication.class);
 	private final Optional<String> serviceAccountEmail;
 	private final Optional<String> p12KeyFilePath;
+	private final Optional<String> jsonKeyFilePath;
 	private final String applicationName;
 	private final HttpTransport httpTransport;
 	private final JsonFactory jsonFactory;
 	private final HttpRequestInitializer credentials;
 
-	public GcsAuthentication(String authMethod, Optional<String> serviceAccountEmail, Optional<String> p12KeyFilePath, String applicationName)
+	public GcsAuthentication(String authMethod, Optional<String> serviceAccountEmail,
+			Optional<String> p12KeyFilePath, Optional<String> jsonKeyFilePath, String applicationName)
 			throws IOException, GeneralSecurityException
 	{
 		this.serviceAccountEmail = serviceAccountEmail;
 		this.p12KeyFilePath = p12KeyFilePath;
+		this.jsonKeyFilePath = jsonKeyFilePath;
 		this.applicationName = applicationName;
 
 		this.httpTransport = new ApacheHttpTransport.Builder().build();
@@ -42,6 +48,8 @@ public class GcsAuthentication
 
 		if (authMethod.equals("compute_engine")) {
 			this.credentials = getComputeCredential();
+		} else if(authMethod.toLowerCase().equals("json_key")) {
+			this.credentials = getServiceAccountCredentialFromJsonFile();
 		} else {
 			this.credentials = getServiceAccountCredential();
 		}
@@ -66,6 +74,14 @@ public class GcsAuthentication
 				)
 				.setServiceAccountPrivateKeyFromP12File(new File(p12KeyFilePath.orNull()))
 				.build();
+	}
+
+	private GoogleCredential getServiceAccountCredentialFromJsonFile() throws IOException
+	{
+		FileInputStream stream = new FileInputStream(jsonKeyFilePath.orNull());
+
+		return GoogleCredential.fromStream(stream, httpTransport, jsonFactory)
+				.createScoped(Collections.singleton(StorageScopes.DEVSTORAGE_READ_WRITE));
 	}
 
 	/**

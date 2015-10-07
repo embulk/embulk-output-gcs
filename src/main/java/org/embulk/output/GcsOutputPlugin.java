@@ -3,6 +3,7 @@ package org.embulk.output;
 import com.google.api.client.http.InputStreamContent;
 import com.google.api.services.storage.Storage;
 import com.google.api.services.storage.model.StorageObject;
+import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
 import org.embulk.config.TaskReport;
@@ -17,6 +18,7 @@ import org.embulk.spi.Buffer;
 import org.embulk.spi.Exec;
 import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.TransactionalFileOutput;
+import org.embulk.spi.unit.LocalFile;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -60,35 +62,81 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		@ConfigDefault("null")
 		Optional<String> getServiceAccountEmail();
 
+		// kept for backward compatibility
 		@Config("p12_keyfile_path")
 		@ConfigDefault("null")
 		Optional<String> getP12KeyfilePath();
+
+		@Config("p12_keyfile")
+		@ConfigDefault("null")
+		Optional<LocalFile> getP12Keyfile();
+		void setP12Keyfile(Optional<LocalFile> p12Keyfile);
+
+		@Config("json_keyfile")
+		@ConfigDefault("null")
+		Optional<LocalFile> getJsonKeyfile();
 
 		@Config("application_name")
 		@ConfigDefault("\"embulk-output-gcs\"")
 		String getApplicationName();
 	}
 
+	private static GcsAuthentication auth;
+
 	@Override
 	public ConfigDiff transaction(ConfigSource config,
-	                              int taskCount,
-	                              FileOutputPlugin.Control control) {
+								  int taskCount,
+								  FileOutputPlugin.Control control) {
 		PluginTask task = config.loadConfig(PluginTask.class);
+
+		if (task.getP12KeyfilePath().isPresent()) {
+			if (task.getP12Keyfile().isPresent()) {
+				throw new ConfigException("Setting both p12_keyfile_path and p12_keyfile is invalid");
+			}
+			try {
+				task.setP12Keyfile(Optional.of(LocalFile.of(task.getP12KeyfilePath().get())));
+			} catch (IOException ex) {
+				throw Throwables.propagate(ex);
+			}
+		}
+
+		if (task.getAuthMethod().getString().equals("json_key")) {
+			if (!task.getJsonKeyfile().isPresent()) {
+				throw new ConfigException("If auth_method is json_key, you have to set json_keyfile");
+			}
+		} else if (task.getAuthMethod().getString().equals("private_key")) {
+			if (!task.getP12Keyfile().isPresent() || !task.getServiceAccountEmail().isPresent()) {
+				throw new ConfigException("If auth_method is private_key, you have to set both service_account_email and p12_keyfile");
+			}
+		}
+
+		try {
+			auth = new GcsAuthentication(
+					task.getAuthMethod().getString(),
+					task.getServiceAccountEmail(),
+					task.getP12Keyfile().transform(localFileToPathString()),
+					task.getJsonKeyfile().transform(localFileToPathString()),
+					task.getApplicationName()
+			);
+		} catch (GeneralSecurityException | IOException ex) {
+			throw new ConfigException(ex);
+		}
+
 		return resume(task.dump(), taskCount, control);
 	}
 
 	@Override
 	public ConfigDiff resume(TaskSource taskSource,
-	                         int taskCount,
-	                         FileOutputPlugin.Control control) {
+							 int taskCount,
+							 FileOutputPlugin.Control control) {
 		control.run(taskSource);
 		return Exec.newConfigDiff();
 	}
 
 	@Override
 	public void cleanup(TaskSource taskSource,
-	                    int taskCount,
-	                    List<TaskReport> successTaskReports) {
+						int taskCount,
+						List<TaskReport> successTaskReports) {
 	}
 
 	@Override
@@ -102,13 +150,22 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 	private Storage createClient(final PluginTask task) {
 		Storage client = null;
 		try {
-			GcsAuthentication auth = new GcsAuthentication(task.getAuthMethod().getString(), task.getServiceAccountEmail(), task.getP12KeyfilePath(), task.getApplicationName());
 			client = auth.getGcsClient(task.getBucket());
-		} catch (GeneralSecurityException | IOException ex) {
+		} catch (IOException ex) {
 			throw new ConfigException(ex);
 		}
 
 		return client;
+	}
+
+	private Function<LocalFile, String> localFileToPathString() {
+		return new Function<LocalFile, String>()
+		{
+			public String apply(LocalFile file)
+			{
+				return file.getPath().toString();
+			}
+		};
 	}
 
 	static class TransactionalGcsFileOutput implements TransactionalFileOutput {
@@ -233,7 +290,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 	public enum AuthMethod
 	{
 		private_key("private_key"),
-		compute_engine("compute_engine");
+		compute_engine("compute_engine"),
+		json_key("json_key");
 
 		private final String string;
 
