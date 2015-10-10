@@ -17,7 +17,7 @@ Google Cloud Storage output plugin for [Embulk](https://github.com/embulk/embulk
 - **content_type**: content type of output file (string, optional, default value is "application/octet-stream")
 - **auth_method**: Authentication method `private_key` or `compute_engine` (string, optional, default value is "private_key")
 - **service_account_email**: Google Cloud Platform service account email (string, required)
-- **p12_keyfile_path**: Private key file fullpath of Google Cloud Platform service account (string, required)
+- **p12_keyfile**: Private key file fullpath of Google Cloud Platform service account (string, required)
 - **application_name**: Application name, anything you like (string, optional, default value is "embulk-output-gcs")
 
 ## Example
@@ -30,7 +30,7 @@ out:
   file_ext: .csv
   auth_method: `private_key` #default
   service_account_email: 'XYZ@developer.gserviceaccount.com'
-  p12_keyfile_path: '/path/to/private/key.p12'
+  p12_keyfile: '/path/to/private/key.p12'
   formatter:
     type: csv
     encoding: UTF-8

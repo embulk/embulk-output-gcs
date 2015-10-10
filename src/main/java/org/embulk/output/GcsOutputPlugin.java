@@ -3,6 +3,7 @@ package org.embulk.output;
 import com.google.api.client.http.InputStreamContent;
 import com.google.api.services.storage.Storage;
 import com.google.api.services.storage.model.StorageObject;
+import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
 import org.embulk.config.TaskReport;
@@ -17,6 +18,7 @@ import org.embulk.spi.Buffer;
 import org.embulk.spi.Exec;
 import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.TransactionalFileOutput;
+import org.embulk.spi.unit.LocalFile;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -60,9 +62,15 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		@ConfigDefault("null")
 		Optional<String> getServiceAccountEmail();
 
+		// kept for backward compatibility
 		@Config("p12_keyfile_path")
 		@ConfigDefault("null")
 		Optional<String> getP12KeyfilePath();
+
+		@Config("p12_keyfile")
+		@ConfigDefault("null")
+		Optional<LocalFile> getP12Keyfile();
+		void setP12Keyfile(Optional<LocalFile> p12Keyfile);
 
 		@Config("application_name")
 		@ConfigDefault("\"embulk-output-gcs\"")
@@ -74,6 +82,18 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 	                              int taskCount,
 	                              FileOutputPlugin.Control control) {
 		PluginTask task = config.loadConfig(PluginTask.class);
+
+		if (task.getP12KeyfilePath().isPresent()) {
+			if (task.getP12Keyfile().isPresent()) {
+				throw new ConfigException("Setting both p12_keyfile_path and p12_keyfile is invalid");
+			}
+			try {
+				task.setP12Keyfile(Optional.of(LocalFile.of(task.getP12KeyfilePath().get())));
+			} catch (IOException ex) {
+				throw Throwables.propagate(ex);
+			}
+		}
+
 		return resume(task.dump(), taskCount, control);
 	}
 
@@ -102,13 +122,28 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 	private Storage createClient(final PluginTask task) {
 		Storage client = null;
 		try {
-			GcsAuthentication auth = new GcsAuthentication(task.getAuthMethod().getString(), task.getServiceAccountEmail(), task.getP12KeyfilePath(), task.getApplicationName());
+			GcsAuthentication auth = new GcsAuthentication(
+					task.getAuthMethod().getString(),
+					task.getServiceAccountEmail(),
+					task.getP12Keyfile().transform(localFileToPathString()),
+					task.getApplicationName()
+			);
 			client = auth.getGcsClient(task.getBucket());
 		} catch (GeneralSecurityException | IOException ex) {
 			throw new ConfigException(ex);
 		}
 
 		return client;
+	}
+
+	private Function<LocalFile, String> localFileToPathString() {
+		return new Function<LocalFile, String>()
+		{
+			public String apply(LocalFile file)
+			{
+				return file.getPath().toString();
+			}
+		};
 	}
 
 	static class TransactionalGcsFileOutput implements TransactionalFileOutput {
