@@ -377,14 +377,7 @@ public class TestGcsOutputPlugin
 
 	private ImmutableList<List<String>> getFileContentsFromGcs(String path) throws Exception
 	{
-		ConfigSource config = Exec.newConfigSource()
-			.set("in", inputConfig())
-			.set("parser", parserConfig(schemaConfig()))
-			.set("type", "gcs")
-			.set("bucket", GCP_BUCKET)
-			.set("path_prefix", "my-prefix")
-			.set("file_ext", ".csv")
-			.set("formatter", formatterConfig());
+		ConfigSource config = config();
 
 		PluginTask task = config.loadConfig(PluginTask.class);
 

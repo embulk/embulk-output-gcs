@@ -81,8 +81,6 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		String getApplicationName();
 	}
 
-	private static GcsAuthentication auth;
-
 	@Override
 	public ConfigDiff transaction(ConfigSource config,
 	                              int taskCount,
@@ -110,18 +108,6 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 			}
 		}
 
-		try {
-			auth = new GcsAuthentication(
-					task.getAuthMethod().getString(),
-					task.getServiceAccountEmail(),
-					task.getP12Keyfile().transform(localFileToPathString()),
-					task.getJsonKeyfile().transform(localFileToPathString()),
-					task.getApplicationName()
-			);
-		} catch (GeneralSecurityException | IOException ex) {
-			throw new ConfigException(ex);
-		}
-
 		return resume(task.dump(), taskCount, control);
 	}
 
@@ -147,11 +133,27 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		return new TransactionalGcsFileOutput(task, client, taskIndex);
 	}
 
+	private GcsAuthentication newGcsAuth(PluginTask task)
+	{
+		try {
+			return new GcsAuthentication(
+					task.getAuthMethod().getString(),
+					task.getServiceAccountEmail(),
+					task.getP12Keyfile().transform(localFileToPathString()),
+					task.getJsonKeyfile().transform(localFileToPathString()),
+					task.getApplicationName()
+			);
+		} catch (GeneralSecurityException | IOException ex) {
+			throw new ConfigException(ex);
+		}
+	}
+
 	private Storage createClient(final PluginTask task) {
 		Storage client = null;
 		try {
+			GcsAuthentication auth = newGcsAuth(task);
 			client = auth.getGcsClient(task.getBucket());
-		} catch (IOException ex) {
+		} catch (ConfigException | IOException ex) {
 			throw new ConfigException(ex);
 		}
 
