@@ -103,3 +103,53 @@ out:
 ```
 $ ./gradlew gem
 ```
+
+## Test
+
+```
+$ ./gradlew test  # -t to watch change of files and rebuild continuously
+```
+
+To run unit tests, we need to configure the following environment variables.
+
+When environment variables are not set, skip almost test cases.
+
+```
+GCP_EMAIL
+GCP_P12_KEYFILE
+GCP_JSON_KEYFILE
+GCP_BUCKET
+GCP_BUCKET_DIRECTORY(optional, if needed)
+```
+
+If you're using Mac OS X El Capitan and GUI Applications(IDE), like as follows.
+```
+$ vi ~/Library/LaunchAgents/environment.plist
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>my.startup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>sh</string>
+    <string>-c</string>
+    <string>
+      launchctl setenv GCP_EMAIL ABCXYZ123ABCXYZ123.gserviceaccount.com
+      launchctl setenv GCP_P12_KEYFILE /path/to/p12_keyfile.p12
+      launchctl setenv GCP_JSON_KEYFILE /path/to/json_keyfile.json
+      launchctl setenv GCP_BUCKET my-bucket
+      launchctl setenv GCP_BUCKET_DIRECTORY unittests
+    </string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+
+$ launchctl load ~/Library/LaunchAgents/environment.plist
+$ launchctl getenv GCP_EMAIL //try to get value.
+
+Then start your applications.
+```
