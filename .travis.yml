@@ -6,8 +6,8 @@ jdk:
 env:
   global:
   - GCP_EMAIL=account-2@embulk-output-gcs-test.iam.gserviceaccount.com
-  - GCP_P12_KEYFILE=/tmp/embulk-output-gcs-test.p12
-  - GCP_JSON_KEYFILE=/tmp/embulk-output-gcs-test.json
+  - GCP_P12_KEYFILE=embulk-output-gcs-test.p12
+  - GCP_JSON_KEYFILE=embulk-output-gcs-test.json
   - GCP_BUCKET=embulk-output-gcs-test-01
   - GCP_BUCKET_DIRECTORY=unittests
 before_cache:
@@ -20,6 +20,4 @@ before_install:
 - openssl aes-256-cbc -K $encrypted_1230b5822723_key -iv $encrypted_1230b5822723_iv
   -in src/test/resources/keys.tar.enc -out keys.tar -d
 - tar xvf keys.tar
-- cp embulk-output-gcs-test.p12 /tmp/embulk-output-gcs-test.p12
-- cp embulk-output-gcs-test.json /tmp/embulk-output-gcs-test.json
 after_success: "./gradlew jacocoTestReport"
