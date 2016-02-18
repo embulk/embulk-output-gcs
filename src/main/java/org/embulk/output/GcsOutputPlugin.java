@@ -6,13 +6,13 @@ import com.google.api.services.storage.model.StorageObject;
 import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
-import org.embulk.config.TaskReport;
 import org.embulk.config.Config;
 import org.embulk.config.ConfigDefault;
 import org.embulk.config.ConfigDiff;
-import org.embulk.config.ConfigSource;
 import org.embulk.config.ConfigException;
+import org.embulk.config.ConfigSource;
 import org.embulk.config.Task;
+import org.embulk.config.TaskReport;
 import org.embulk.config.TaskSource;
 import org.embulk.spi.Buffer;
 import org.embulk.spi.Exec;
@@ -33,10 +33,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-public class GcsOutputPlugin implements FileOutputPlugin {
+public class GcsOutputPlugin implements FileOutputPlugin
+{
 	private static final Logger logger = Exec.getLogger(GcsOutputPlugin.class);
 
-	public interface PluginTask extends Task {
+	public interface PluginTask extends Task
+	{
 		@Config("bucket")
 		String getBucket();
 
@@ -84,7 +86,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 	@Override
 	public ConfigDiff transaction(ConfigSource config,
 	                              int taskCount,
-	                              FileOutputPlugin.Control control) {
+	                              FileOutputPlugin.Control control)
+	{
 		PluginTask task = config.loadConfig(PluginTask.class);
 
 		if (task.getP12KeyfilePath().isPresent()) {
@@ -93,7 +96,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 			}
 			try {
 				task.setP12Keyfile(Optional.of(LocalFile.of(task.getP12KeyfilePath().get())));
-			} catch (IOException ex) {
+			}
+			catch (IOException ex) {
 				throw Throwables.propagate(ex);
 			}
 		}
@@ -102,7 +106,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 			if (!task.getJsonKeyfile().isPresent()) {
 				throw new ConfigException("If auth_method is json_key, you have to set json_keyfile");
 			}
-		} else if (task.getAuthMethod().getString().equals("private_key")) {
+		}
+		else if (task.getAuthMethod().getString().equals("private_key")) {
 			if (!task.getP12Keyfile().isPresent() || !task.getServiceAccountEmail().isPresent()) {
 				throw new ConfigException("If auth_method is private_key, you have to set both service_account_email and p12_keyfile");
 			}
@@ -114,7 +119,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 	@Override
 	public ConfigDiff resume(TaskSource taskSource,
 	                         int taskCount,
-	                         FileOutputPlugin.Control control) {
+	                         FileOutputPlugin.Control control)
+	{
 		control.run(taskSource);
 		return Exec.newConfigDiff();
 	}
@@ -122,11 +128,13 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 	@Override
 	public void cleanup(TaskSource taskSource,
 	                    int taskCount,
-	                    List<TaskReport> successTaskReports) {
+	                    List<TaskReport> successTaskReports)
+	{
 	}
 
 	@Override
-	public TransactionalFileOutput open(TaskSource taskSource, final int taskIndex) {
+	public TransactionalFileOutput open(TaskSource taskSource, final int taskIndex)
+	{
 		PluginTask task = taskSource.loadTask(PluginTask.class);
 
 		Storage client = createClient(task);
@@ -143,24 +151,28 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 					task.getJsonKeyfile().transform(localFileToPathString()),
 					task.getApplicationName()
 			);
-		} catch (GeneralSecurityException | IOException ex) {
+		}
+		catch (GeneralSecurityException | IOException ex) {
 			throw new ConfigException(ex);
 		}
 	}
 
-	private Storage createClient(final PluginTask task) {
+	private Storage createClient(final PluginTask task)
+	{
 		Storage client = null;
 		try {
 			GcsAuthentication auth = newGcsAuth(task);
 			client = auth.getGcsClient(task.getBucket());
-		} catch (ConfigException | IOException ex) {
+		}
+		catch (ConfigException | IOException ex) {
 			throw new ConfigException(ex);
 		}
 
 		return client;
 	}
 
-	private Function<LocalFile, String> localFileToPathString() {
+	private Function<LocalFile, String> localFileToPathString()
+	{
 		return new Function<LocalFile, String>()
 		{
 			public String apply(LocalFile file)
@@ -170,7 +182,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		};
 	}
 
-	static class TransactionalGcsFileOutput implements TransactionalFileOutput {
+	static class TransactionalGcsFileOutput implements TransactionalFileOutput
+	{
 		private final int taskIndex;
 		private final Storage client;
 		private final String bucket;
@@ -185,7 +198,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		private PipedOutputStream currentStream = null;
 		private Future<StorageObject> currentUpload = null;
 
-		TransactionalGcsFileOutput(PluginTask task, Storage client, int taskIndex) {
+		TransactionalGcsFileOutput(PluginTask task, Storage client, int taskIndex)
+		{
 			this.taskIndex = taskIndex;
 			this.client = client;
 			this.bucket = task.getBucket();
@@ -195,7 +209,8 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 			this.contentType = task.getContentType();
 		}
 
-		public void nextFile() {
+		public void nextFile()
+		{
 			closeCurrentUpload();
 			currentStream = new PipedOutputStream();
 			String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
@@ -205,40 +220,48 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 		}
 
 		@Override
-		public void add(Buffer buffer) {
+		public void add(Buffer buffer)
+		{
 			try {
 				logger.debug("#add called {} times for taskIndex {}", callCount, taskIndex);
 				currentStream.write(buffer.array(), buffer.offset(), buffer.limit());
 				callCount++;
-			} catch (IOException ex) {
+			}
+			catch (IOException ex) {
 				throw new RuntimeException(ex);
-			} finally {
+			}
+			finally {
 				buffer.release();
 			}
 		}
 
 		@Override
-		public void finish() {
+		public void finish()
+		{
 			closeCurrentUpload();
 		}
 
 		@Override
-		public void close() {
+		public void close()
+		{
 			closeCurrentUpload();
 		}
 
 		@Override
-		public void abort() {
+		public void abort()
+		{
 		}
 
 		@Override
-		public TaskReport commit() {
+		public TaskReport commit()
+		{
 			TaskReport report = Exec.newTaskReport();
 			report.set("files", storageObjects);
 			return report;
 		}
 
-		private void closeCurrentUpload() {
+		private void closeCurrentUpload()
+		{
 			try {
 				if (currentStream != null) {
 					currentStream.close();
@@ -253,12 +276,14 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 				}
 
 				callCount = 0;
-			} catch (InterruptedException | ExecutionException | IOException ex) {
+			}
+			catch (InterruptedException | ExecutionException | IOException ex) {
 				throw Throwables.propagate(ex);
 			}
 		}
 
-		private Future<StorageObject> startUpload(String path, String contentType, PipedOutputStream output) {
+		private Future<StorageObject> startUpload(String path, String contentType, PipedOutputStream output)
+		{
 			try {
 				final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -273,17 +298,21 @@ public class GcsOutputPlugin implements FileOutputPlugin {
 				insert.setDisableGZipContent(true);
 				return executor.submit(new Callable<StorageObject>() {
 					@Override
-					public StorageObject call() throws InterruptedException {
+					public StorageObject call() throws InterruptedException
+					{
 						try {
 							return insert.execute();
-						} catch (IOException ex) {
+						}
+						catch (IOException ex) {
 							throw Throwables.propagate(ex);
-						} finally {
+						}
+						finally {
 							executor.shutdown();
 						}
 					}
 				});
-			} catch (IOException ex) {
+			}
+			catch (IOException ex) {
 				throw Throwables.propagate(ex);
 			}
 		}

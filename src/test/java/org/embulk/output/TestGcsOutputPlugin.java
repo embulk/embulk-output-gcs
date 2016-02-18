@@ -1,46 +1,44 @@
 package org.embulk.output;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.util.Arrays;
-import java.util.List;
-
-import com.google.common.collect.ImmutableMap;
+import com.google.api.services.storage.Storage;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
-import java.io.IOException;
-import java.security.GeneralSecurityException;
 
 import org.embulk.EmbulkTestRuntime;
+import org.embulk.config.ConfigException;
+import org.embulk.config.ConfigSource;
 import org.embulk.config.TaskReport;
 import org.embulk.config.TaskSource;
-import org.embulk.config.ConfigDiff;
-import org.embulk.config.ConfigSource;
-import org.embulk.config.ConfigException;
+import org.embulk.output.GcsOutputPlugin.PluginTask;
 import org.embulk.spi.Buffer;
 import org.embulk.spi.Exec;
 import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.FileOutputRunner;
 import org.embulk.spi.OutputPlugin;
-import org.embulk.spi.TransactionalFileOutput;
 import org.embulk.spi.Schema;
-import org.embulk.output.GcsOutputPlugin.PluginTask;
+import org.embulk.spi.TransactionalFileOutput;
 import org.embulk.standards.CsvParserPlugin;
 
-import org.junit.BeforeClass;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assume.assumeNotNull;
-import java.lang.reflect.Method;
-import java.lang.reflect.InvocationTargetException;
 
-import com.google.api.services.storage.Storage;
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.security.GeneralSecurityException;
+import java.util.Arrays;
+import java.util.List;
 
 public class TestGcsOutputPlugin
 {
@@ -51,7 +49,7 @@ public class TestGcsOutputPlugin
 	private static String GCP_BUCKET_DIRECTORY;
 	private static String GCP_PATH_PREFIX;
 	private static String LOCAL_PATH_PREFIX;
-	private final String GCP_APPLICATION_NAME = "embulk-output-gcs";
+	private static String GCP_APPLICATION_NAME;
 	private FileOutputRunner runner;
 
 	/*
@@ -74,6 +72,7 @@ public class TestGcsOutputPlugin
 		GCP_BUCKET_DIRECTORY = System.getenv("GCP_BUCKET_DIRECTORY") != null ? getDirectory(System.getenv("GCP_BUCKET_DIRECTORY")) : getDirectory("");
 		GCP_PATH_PREFIX = GCP_BUCKET_DIRECTORY + "sample_";
 		LOCAL_PATH_PREFIX = GcsOutputPlugin.class.getClassLoader().getResource("sample_01.csv").getPath();
+		GCP_APPLICATION_NAME = "embulk-output-gcs";
 	}
 
 	@Rule
@@ -229,7 +228,8 @@ public class TestGcsOutputPlugin
 		method.setAccessible(true);
 		try {
 			method.invoke(plugin, task);
-		} catch (InvocationTargetException ex) {
+		}
+		catch (InvocationTargetException ex) {
 			throw (ConfigException) ex.getCause();
 		}
 	}
@@ -414,9 +414,9 @@ public class TestGcsOutputPlugin
 	{
 		ByteArrayOutputStream bo = new ByteArrayOutputStream();
 		byte [] buffer = new byte[1024];
-		while(true) {
+		while (true) {
 			int len = is.read(buffer);
-			if(len < 0) {
+			if (len < 0) {
 				break;
 			}
 			bo.write(buffer, 0, len);
