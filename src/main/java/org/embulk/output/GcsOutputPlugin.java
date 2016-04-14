@@ -22,8 +22,10 @@ import org.embulk.spi.unit.LocalFile;
 import org.embulk.spi.util.RetryExecutor.RetryGiveupException;
 import org.embulk.spi.util.RetryExecutor.Retryable;
 import org.slf4j.Logger;
+import static org.embulk.spi.util.RetryExecutor.retryExecutor;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.security.GeneralSecurityException;
@@ -194,6 +196,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
         private final String pathSuffix;
         private final String sequenceFormat;
         private final String contentType;
+        private final int maxConnectionRetry;
         private final List<StorageObject> storageObjects = new ArrayList<>();
 
         private int fileIndex = 0;
@@ -210,6 +213,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             this.pathSuffix = task.getFileNameExtension();
             this.sequenceFormat = task.getSequenceFormat();
             this.contentType = task.getContentType();
+            this.maxConnectionRetry = task.getMaxConnectionRetry();
         }
 
         public void nextFile()
@@ -285,29 +289,21 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         }
 
-        private Future<StorageObject> startUpload(String path, String contentType, PipedOutputStream output)
+        private Future<StorageObject> startUpload(final String path, final String contentType, final PipedOutputStream output)
         {
             try {
                 final ExecutorService executor = Executors.newCachedThreadPool();
 
                 PipedInputStream inputStream = new PipedInputStream(output);
-                InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
+                final InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
                 mediaContent.setCloseInputStream(true);
 
-                StorageObject objectMetadata = new StorageObject();
-                objectMetadata.setName(path);
-
-                final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
-                insert.setDisableGZipContent(true);
                 return executor.submit(new Callable<StorageObject>() {
                     @Override
-                    public StorageObject call() throws InterruptedException
+                    public StorageObject call() throws IOException
                     {
                         try {
-                            return insert.execute();
-                        }
-                        catch (IOException ex) {
-                            throw Throwables.propagate(ex);
+                            return execUpload(path, mediaContent);
                         }
                         finally {
                             executor.shutdown();
@@ -317,6 +313,60 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
             catch (IOException ex) {
                 throw Throwables.propagate(ex);
+            }
+        }
+
+        private StorageObject execUpload(final String path, final InputStreamContent mediaContent) throws IOException
+        {
+            try {
+                return retryExecutor()
+                        .withRetryLimit(maxConnectionRetry)
+                        .withInitialRetryWait(500)
+                        .withMaxRetryWait(30 * 1000)
+                        .runInterruptible(new Retryable<StorageObject>() {
+                            @Override
+                            public StorageObject call() throws IOException, RetryGiveupException
+                            {
+                                StorageObject objectMetadata = new StorageObject();
+                                objectMetadata.setName(path);
+
+                                final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
+                                insert.setDisableGZipContent(true);
+                                return insert.execute();
+                            }
+
+                            @Override
+                            public boolean isRetryableException(Exception exception)
+                            {
+                                return true;
+                            }
+
+                            @Override
+                            public void onRetry(Exception exception, int retryCount, int retryLimit, int retryWait)
+                                    throws RetryGiveupException
+                            {
+                                String message = String.format("GCS put request failed. Retrying %d/%d after %d seconds. Message: %s: %s",
+                                        retryCount, retryLimit, retryWait / 1000, exception.getClass(), exception.getMessage());
+                                if (retryCount % 3 == 0) {
+                                    logger.warn(message, exception);
+                                }
+                                else {
+                                    logger.warn(message);
+                                }
+                            }
+
+                            @Override
+                            public void onGiveup(Exception firstException, Exception lastException)
+                                    throws RetryGiveupException
+                            {
+                            }
+                        });
+            }
+            catch (RetryGiveupException ex) {
+                throw Throwables.propagate(ex.getCause());
+            }
+            catch (InterruptedException ex) {
+                throw new InterruptedIOException();
             }
         }
     }
