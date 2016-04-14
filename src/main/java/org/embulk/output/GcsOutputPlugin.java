@@ -19,6 +19,8 @@ import org.embulk.spi.Exec;
 import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.TransactionalFileOutput;
 import org.embulk.spi.unit.LocalFile;
+import org.embulk.spi.util.RetryExecutor.RetryGiveupException;
+import org.embulk.spi.util.RetryExecutor.Retryable;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -81,6 +83,10 @@ public class GcsOutputPlugin implements FileOutputPlugin
         @Config("application_name")
         @ConfigDefault("\"embulk-output-gcs\"")
         String getApplicationName();
+
+        @Config("max_connection_retry")
+        @ConfigDefault("10") // 10 times retry to connect GCS server if failed.
+        int getMaxConnectionRetry();
     }
 
     @Override
@@ -159,16 +165,13 @@ public class GcsOutputPlugin implements FileOutputPlugin
 
     private Storage createClient(final PluginTask task)
     {
-        Storage client = null;
         try {
             GcsAuthentication auth = newGcsAuth(task);
-            client = auth.getGcsClient(task.getBucket());
+            return auth.getGcsClient(task.getBucket(), task.getMaxConnectionRetry());
         }
         catch (ConfigException | IOException ex) {
-            throw new ConfigException(ex);
+            throw Throwables.propagate(ex);
         }
-
-        return client;
     }
 
     private Function<LocalFile, String> localFileToPathString()
