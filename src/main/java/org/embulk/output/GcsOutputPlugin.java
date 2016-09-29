@@ -226,9 +226,6 @@ public class GcsOutputPlugin implements FileOutputPlugin
             try {
                 tempFile = Exec.getTempFileSpace().createTempFile();
                 currentStream = new BufferedOutputStream(new FileOutputStream(tempFile));
-                String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
-                logger.info("Uploading '{}/{}'", bucket, path);
-                currentUpload = startUpload(path, contentType, tempFile);
                 fileIndex++;
             }
             catch (IOException ex) {
@@ -255,6 +252,11 @@ public class GcsOutputPlugin implements FileOutputPlugin
         @Override
         public void finish()
         {
+            String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
+            if (tempFile != null) {
+                currentUpload = startUpload(path, contentType, tempFile);
+            }
+
             closeCurrentUpload();
         }
 
@@ -320,6 +322,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
                     public StorageObject call() throws IOException
                     {
                         try {
+                            logger.info("Uploading '{}/{}'", bucket, path);
                             return execUploadWithRetry(path, mediaContent);
                         }
                         finally {
