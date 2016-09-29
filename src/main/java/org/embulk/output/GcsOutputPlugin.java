@@ -315,11 +315,6 @@ public class GcsOutputPlugin implements FileOutputPlugin
                 final InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
                 mediaContent.setCloseInputStream(true);
 
-                StorageObject objectMetadata = new StorageObject();
-                objectMetadata.setName(path);
-
-                final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
-                insert.setDisableGZipContent(true);
                 return executor.submit(new Callable<StorageObject>() {
                     @Override
                     public StorageObject call() throws IOException
