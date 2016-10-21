@@ -253,6 +253,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
         public void finish()
         {
             String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
+            close();
             if (tempFile != null) {
                 currentUpload = startUpload(path, contentType, tempFile);
             }
@@ -263,7 +264,15 @@ public class GcsOutputPlugin implements FileOutputPlugin
         @Override
         public void close()
         {
-            closeCurrentUpload();
+            try {
+                if (currentStream != null) {
+                    currentStream.close();
+                    currentStream = null;
+                }
+            }
+            catch (IOException ex) {
+                throw Throwables.propagate(ex);
+            }
         }
 
         @Override
@@ -282,11 +291,6 @@ public class GcsOutputPlugin implements FileOutputPlugin
         private void closeCurrentUpload()
         {
             try {
-                if (currentStream != null) {
-                    currentStream.close();
-                    currentStream = null;
-                }
-
                 if (tempFile != null) {
                     if (!tempFile.delete()) {
                         throw new IOException(String.format("Failed to delete temporary file %s", tempFile.getAbsolutePath()));
