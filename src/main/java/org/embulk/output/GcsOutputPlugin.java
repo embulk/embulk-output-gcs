@@ -6,6 +6,7 @@ import com.google.api.services.storage.model.StorageObject;
 import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
+import org.apache.commons.codec.binary.Base64;
 import org.embulk.config.Config;
 import org.embulk.config.ConfigDefault;
 import org.embulk.config.ConfigDiff;
@@ -31,7 +32,10 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.security.DigestInputStream;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -316,20 +320,23 @@ public class GcsOutputPlugin implements FileOutputPlugin
         {
             try {
                 final ExecutorService executor = Executors.newCachedThreadPool();
+                final String hash = getLocalMd5hash(tempFile.getAbsolutePath());
 
-                BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile));
+                final BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile));
                 final InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
                 mediaContent.setCloseInputStream(true);
 
                 return executor.submit(new Callable<StorageObject>() {
                     @Override
-                    public StorageObject call() throws IOException
+                    public StorageObject call() throws IOException, NoSuchAlgorithmException
                     {
                         try {
                             logger.info("Uploading '{}/{}'", bucket, path);
-                            return execUploadWithRetry(path, mediaContent);
+
+                            return execUploadWithRetry(path, mediaContent, hash);
                         }
                         finally {
+                            inputStream.close();
                             executor.shutdown();
                         }
                     }
@@ -340,7 +347,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         }
 
-        private StorageObject execUploadWithRetry(final String path, final InputStreamContent mediaContent) throws IOException
+        private StorageObject execUploadWithRetry(final String path, final InputStreamContent mediaContent, final String localHash) throws IOException
         {
             try {
                 return retryExecutor()
@@ -349,14 +356,20 @@ public class GcsOutputPlugin implements FileOutputPlugin
                     .withMaxRetryWait(30 * 1000)
                     .runInterruptible(new Retryable<StorageObject>() {
                     @Override
-                    public StorageObject call() throws IOException, RetryGiveupException
+                    public StorageObject call() throws IOException, RetryGiveupException, HashUnmatchException
                     {
                         StorageObject objectMetadata = new StorageObject();
                         objectMetadata.setName(path);
 
                         final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
                         insert.setDisableGZipContent(true);
-                        return insert.execute();
+                        StorageObject obj = insert.execute();
+
+                        logger.info(String.format("Local Hash(MD5): %s / Remote Hash(MD5): %s", localHash, obj.getMd5Hash()));
+                        if (!obj.getMd5Hash().equals(localHash)) {
+                            throw new HashUnmatchException("Hash(MD5) of remote file unmatched with local file");
+                        }
+                        return obj;
                     }
 
                     @Override
@@ -389,6 +402,39 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
             catch (InterruptedException ex) {
                 throw new InterruptedIOException();
+            }
+        }
+
+        /*
+        MD5 hash sum on GCS bucket is encoded with base64.
+        You can get same hash with following commands.
+        $ openssl dgst -md5 -binary /path/to/file.txt | openssl enc -base64
+        or
+        $ gsutil hash -m /path/to/file.txt
+         */
+        private String getLocalMd5hash(String filePath) throws IOException
+        {
+            try {
+                MessageDigest md = MessageDigest.getInstance("MD5");
+                try (DigestInputStream input = new DigestInputStream(
+                        new BufferedInputStream(new FileInputStream(filePath)), md)) {
+                    while (input.read() != -1) {
+                        // do nothing
+                    }
+
+                    return new String(Base64.encodeBase64(md.digest()));
+                }
+            }
+            catch (NoSuchAlgorithmException ex) {
+                throw new ConfigException("MD5 algorism not found");
+            }
+        }
+
+        private static class HashUnmatchException extends Exception
+        {
+            private HashUnmatchException(String message)
+            {
+                super(message);
             }
         }
     }
