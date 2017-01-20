@@ -295,13 +295,6 @@ public class GcsOutputPlugin implements FileOutputPlugin
         private void closeCurrentUpload()
         {
             try {
-                if (tempFile != null) {
-                    if (!tempFile.delete()) {
-                        throw new IOException(String.format("Failed to delete temporary file %s", tempFile.getAbsolutePath()));
-                    }
-                    tempFile = null;
-                }
-
                 if (currentUpload != null) {
                     StorageObject obj = currentUpload.get();
                     storageObjects.add(obj);
@@ -311,7 +304,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
 
                 callCount = 0;
             }
-            catch (InterruptedException | ExecutionException | IOException ex) {
+            catch (InterruptedException | ExecutionException ex) {
                 throw Throwables.propagate(ex);
             }
         }
