@@ -259,7 +259,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
             close();
             if (tempFile != null) {
-                currentUpload = startUpload(path, contentType, tempFile);
+                currentUpload = startUpload(path);
             }
 
             closeCurrentUpload();
@@ -316,15 +316,11 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         }
 
-        private Future<StorageObject> startUpload(final String path, String contentType, File tempFile)
+        private Future<StorageObject> startUpload(final String path)
         {
             try {
                 final ExecutorService executor = Executors.newCachedThreadPool();
                 final String hash = getLocalMd5hash(tempFile.getAbsolutePath());
-
-                final BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile));
-                final InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
-                mediaContent.setCloseInputStream(true);
 
                 return executor.submit(new Callable<StorageObject>() {
                     @Override
@@ -332,11 +328,9 @@ public class GcsOutputPlugin implements FileOutputPlugin
                     {
                         try {
                             logger.info("Uploading '{}/{}'", bucket, path);
-
-                            return execUploadWithRetry(path, mediaContent, hash);
+                            return execUploadWithRetry(path, hash);
                         }
                         finally {
-                            inputStream.close();
                             executor.shutdown();
                         }
                     }
@@ -347,7 +341,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         }
 
-        private StorageObject execUploadWithRetry(final String path, final InputStreamContent mediaContent, final String localHash) throws IOException
+        private StorageObject execUploadWithRetry(final String path, final String localHash) throws IOException
         {
             try {
                 return retryExecutor()
@@ -358,18 +352,23 @@ public class GcsOutputPlugin implements FileOutputPlugin
                     @Override
                     public StorageObject call() throws IOException, RetryGiveupException, HashUnmatchException
                     {
-                        StorageObject objectMetadata = new StorageObject();
-                        objectMetadata.setName(path);
+                        try (final BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile))) {
+                            InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
+                            mediaContent.setCloseInputStream(true);
 
-                        final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
-                        insert.setDisableGZipContent(true);
-                        StorageObject obj = insert.execute();
+                            StorageObject objectMetadata = new StorageObject();
+                            objectMetadata.setName(path);
 
-                        logger.info(String.format("Local Hash(MD5): %s / Remote Hash(MD5): %s", localHash, obj.getMd5Hash()));
-                        if (!obj.getMd5Hash().equals(localHash)) {
-                            throw new HashUnmatchException("Hash(MD5) of remote file unmatched with local file");
+                            final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
+                            insert.setDisableGZipContent(true);
+                            StorageObject obj = insert.execute();
+
+                            logger.info(String.format("Local Hash(MD5): %s / Remote Hash(MD5): %s", localHash, obj.getMd5Hash()));
+                            if (!obj.getMd5Hash().equals(localHash)) {
+                                throw new HashUnmatchException("Hash(MD5) of remote file unmatched with local file");
+                            }
+                            return obj;
                         }
-                        return obj;
                     }
 
                     @Override
