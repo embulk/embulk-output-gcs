@@ -1,6 +1,7 @@
 package org.embulk.output;
 
 import com.google.api.client.http.InputStreamContent;
+import com.google.api.client.repackaged.org.apache.commons.codec.binary.Base64;
 import com.google.api.services.storage.Storage;
 import com.google.api.services.storage.model.StorageObject;
 import com.google.common.base.Function;
@@ -32,6 +33,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
@@ -308,24 +310,30 @@ public class GcsOutputPlugin implements FileOutputPlugin
 
         private Future<StorageObject> startUpload(final String path)
         {
-            final ExecutorService executor = Executors.newCachedThreadPool();
+            try {
+                final ExecutorService executor = Executors.newCachedThreadPool();
+                final String hash = getLocalMd5hash(tempFile.getAbsolutePath());
 
-            return executor.submit(new Callable<StorageObject>() {
-                @Override
-                public StorageObject call() throws IOException, NoSuchAlgorithmException
-                {
-                    try {
-                        logger.info("Uploading '{}/{}'", bucket, path);
-                        return execUploadWithRetry(path);
+                return executor.submit(new Callable<StorageObject>() {
+                    @Override
+                    public StorageObject call() throws IOException
+                    {
+                        try {
+                            logger.info("Uploading '{}/{}'", bucket, path);
+                            return execUploadWithRetry(path, hash);
+                        }
+                        finally {
+                            executor.shutdown();
+                        }
                     }
-                    finally {
-                        executor.shutdown();
-                    }
-                }
-            });
+                });
+            }
+            catch (IOException ex) {
+                throw Throwables.propagate(ex);
+            }
         }
 
-        private StorageObject execUploadWithRetry(final String path) throws IOException
+        private StorageObject execUploadWithRetry(final String path, final String localHash) throws IOException
         {
             try {
                 return retryExecutor()
@@ -345,7 +353,10 @@ public class GcsOutputPlugin implements FileOutputPlugin
 
                             final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
                             insert.setDisableGZipContent(true);
-                            return insert.execute();
+                            StorageObject obj = insert.execute();
+
+                            logger.info(String.format("Local Hash(MD5): %s / Remote Hash(MD5): %s", localHash, obj.getMd5Hash()));
+                            return obj;
                         }
                     }
 
@@ -379,6 +390,31 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
             catch (InterruptedException ex) {
                 throw new InterruptedIOException();
+            }
+        }
+
+        /*
+        MD5 hash sum on GCS bucket is encoded with base64.
+        You can get same hash with following commands.
+        $ openssl dgst -md5 -binary /path/to/file.txt | openssl enc -base64
+        or
+        $ gsutil hash -m /path/to/file.txt
+         */
+        private String getLocalMd5hash(String filePath) throws IOException
+        {
+            try {
+                MessageDigest md = MessageDigest.getInstance("MD5");
+                try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(new File(filePath)))) {
+                    byte[] buffer = new byte[256];
+                    int len;
+                    while ((len = input.read(buffer, 0, buffer.length)) >= 0) {
+                        md.update(buffer, 0, len);
+                    }
+                    return new String(Base64.encodeBase64(md.digest()));
+                }
+            }
+            catch (NoSuchAlgorithmException ex) {
+                throw new ConfigException("MD5 algorism not found");
             }
         }
     }
