@@ -1,6 +1,7 @@
 package org.embulk.output;
 
 import com.google.api.client.http.InputStreamContent;
+import com.google.api.client.repackaged.org.apache.commons.codec.binary.Base64;
 import com.google.api.services.storage.Storage;
 import com.google.api.services.storage.model.StorageObject;
 import com.google.common.base.Function;
@@ -32,6 +33,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -255,7 +258,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
             close();
             if (tempFile != null) {
-                currentUpload = startUpload(path, contentType, tempFile);
+                currentUpload = startUpload(path);
             }
 
             closeCurrentUpload();
@@ -291,13 +294,6 @@ public class GcsOutputPlugin implements FileOutputPlugin
         private void closeCurrentUpload()
         {
             try {
-                if (tempFile != null) {
-                    if (!tempFile.delete()) {
-                        throw new IOException(String.format("Failed to delete temporary file %s", tempFile.getAbsolutePath()));
-                    }
-                    tempFile = null;
-                }
-
                 if (currentUpload != null) {
                     StorageObject obj = currentUpload.get();
                     storageObjects.add(obj);
@@ -307,19 +303,16 @@ public class GcsOutputPlugin implements FileOutputPlugin
 
                 callCount = 0;
             }
-            catch (InterruptedException | ExecutionException | IOException ex) {
+            catch (InterruptedException | ExecutionException ex) {
                 throw Throwables.propagate(ex);
             }
         }
 
-        private Future<StorageObject> startUpload(final String path, String contentType, File tempFile)
+        private Future<StorageObject> startUpload(final String path)
         {
             try {
                 final ExecutorService executor = Executors.newCachedThreadPool();
-
-                BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile));
-                final InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
-                mediaContent.setCloseInputStream(true);
+                final String hash = getLocalMd5hash(tempFile.getAbsolutePath());
 
                 return executor.submit(new Callable<StorageObject>() {
                     @Override
@@ -327,7 +320,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
                     {
                         try {
                             logger.info("Uploading '{}/{}'", bucket, path);
-                            return execUploadWithRetry(path, mediaContent);
+                            return execUploadWithRetry(path, hash);
                         }
                         finally {
                             executor.shutdown();
@@ -340,7 +333,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         }
 
-        private StorageObject execUploadWithRetry(final String path, final InputStreamContent mediaContent) throws IOException
+        private StorageObject execUploadWithRetry(final String path, final String localHash) throws IOException
         {
             try {
                 return retryExecutor()
@@ -351,12 +344,20 @@ public class GcsOutputPlugin implements FileOutputPlugin
                     @Override
                     public StorageObject call() throws IOException, RetryGiveupException
                     {
-                        StorageObject objectMetadata = new StorageObject();
-                        objectMetadata.setName(path);
+                        try (final BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile))) {
+                            InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
+                            mediaContent.setCloseInputStream(true);
 
-                        final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
-                        insert.setDisableGZipContent(true);
-                        return insert.execute();
+                            StorageObject objectMetadata = new StorageObject();
+                            objectMetadata.setName(path);
+
+                            final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
+                            insert.setDisableGZipContent(true);
+                            StorageObject obj = insert.execute();
+
+                            logger.info(String.format("Local Hash(MD5): %s / Remote Hash(MD5): %s", localHash, obj.getMd5Hash()));
+                            return obj;
+                        }
                     }
 
                     @Override
@@ -389,6 +390,31 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
             catch (InterruptedException ex) {
                 throw new InterruptedIOException();
+            }
+        }
+
+        /*
+        MD5 hash sum on GCS bucket is encoded with base64.
+        You can get same hash with following commands.
+        $ openssl dgst -md5 -binary /path/to/file.txt | openssl enc -base64
+        or
+        $ gsutil hash -m /path/to/file.txt
+         */
+        private String getLocalMd5hash(String filePath) throws IOException
+        {
+            try {
+                MessageDigest md = MessageDigest.getInstance("MD5");
+                try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(new File(filePath)))) {
+                    byte[] buffer = new byte[256];
+                    int len;
+                    while ((len = input.read(buffer, 0, buffer.length)) >= 0) {
+                        md.update(buffer, 0, len);
+                    }
+                    return new String(Base64.encodeBase64(md.digest()));
+                }
+            }
+            catch (NoSuchAlgorithmException ex) {
+                throw new ConfigException("MD5 algorism not found");
             }
         }
     }
