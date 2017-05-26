@@ -255,7 +255,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
         @Override
         public void finish()
         {
-            String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
+            String path = generateRemotePath(pathPrefix, sequenceFormat, taskIndex, fileIndex, pathSuffix);
             close();
             if (tempFile != null) {
                 currentUpload = startUpload(path);
@@ -417,6 +417,12 @@ public class GcsOutputPlugin implements FileOutputPlugin
                 throw new ConfigException("MD5 algorism not found");
             }
         }
+    }
+
+    private static String generateRemotePath(String pathPrefix, String sequenceFormat, int taskIndex, int fileIndex, String pathSuffix)
+    {
+        String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
+        return path.replaceFirst("\\.*/*", "");
     }
 
     public enum AuthMethod
