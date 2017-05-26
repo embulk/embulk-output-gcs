@@ -70,7 +70,7 @@ public class TestGcsOutputPlugin
         assumeNotNull(GCP_EMAIL, GCP_P12_KEYFILE, GCP_JSON_KEYFILE, GCP_BUCKET);
 
         GCP_BUCKET_DIRECTORY = System.getenv("GCP_BUCKET_DIRECTORY") != null ? getDirectory(System.getenv("GCP_BUCKET_DIRECTORY")) : getDirectory("");
-        GCP_PATH_PREFIX = GCP_BUCKET_DIRECTORY + "sample_";
+        GCP_PATH_PREFIX = GCP_BUCKET_DIRECTORY + "output_";
         LOCAL_PATH_PREFIX = GcsOutputPlugin.class.getClassLoader().getResource("sample_01.csv").getPath();
         GCP_APPLICATION_NAME = "embulk-output-gcs";
     }
@@ -275,7 +275,7 @@ public class TestGcsOutputPlugin
         output.finish();
         output.commit();
 
-        String remotePath = GCP_PATH_PREFIX + String.format(task.getSequenceFormat(), 0, 0) + task.getFileNameExtension();
+        String remotePath = GCP_PATH_PREFIX + String.format(task.getSequenceFormat(), 0, 1) + task.getFileNameExtension();
         assertRecords(remotePath);
     }
 
