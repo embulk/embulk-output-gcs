@@ -419,6 +419,13 @@ public class GcsOutputPlugin implements FileOutputPlugin
         }
     }
 
+    /**
+     * GCS has character limitation in object names.
+     * @see https://cloud.google.com/storage/docs/naming#objectnames
+     * Although "." isn't listed at above pages, we can't access "./" path from GUI console.
+     * And in many cases, user don't intend of creating "/" directory under the bucket.
+     * This method normalizes path when it contains "./" and "/" and its variations at the beginning
+     */
     private static String generateRemotePath(String pathPrefix, String sequenceFormat, int taskIndex, int fileIndex, String pathSuffix)
     {
         String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
