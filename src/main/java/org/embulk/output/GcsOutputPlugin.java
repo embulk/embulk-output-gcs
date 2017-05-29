@@ -422,7 +422,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
     private static String generateRemotePath(String pathPrefix, String sequenceFormat, int taskIndex, int fileIndex, String pathSuffix)
     {
         String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
-        return path.replaceFirst("\\.*/*", "");
+        return path.replaceFirst("^\\.*/*", "");
     }
 
     public enum AuthMethod
