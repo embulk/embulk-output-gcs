@@ -279,6 +279,24 @@ public class TestGcsOutputPlugin
         assertRecords(remotePath);
     }
 
+    @Test
+    public void testGenerateRemotePath() throws Exception
+    {
+        ConfigSource configSource = config();
+        PluginTask task = configSource.loadConfig(PluginTask.class);
+        Method method = GcsOutputPlugin.class.getDeclaredMethod("generateRemotePath", String.class, String.class, int.class, int.class, String.class);
+        method.setAccessible(true);
+        assertEquals("sample.000.01.csv", method.invoke(plugin, "/sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", method.invoke(plugin, "./sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", method.invoke(plugin, "../sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", method.invoke(plugin, "//sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("path/to/sample.000.01.csv", method.invoke(plugin, "/path/to/sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("path/to/./sample.000.01.csv", method.invoke(plugin, "path/to/./sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("path/to/../sample.000.01.csv", method.invoke(plugin, "path/to/../sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", method.invoke(plugin, "....../sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", method.invoke(plugin, "......///sample", task.getSequenceFormat(), 0, 1, ".csv"));
+    }
+
     public ConfigSource config()
     {
         return Exec.newConfigSource()
