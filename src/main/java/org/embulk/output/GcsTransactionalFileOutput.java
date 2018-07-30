@@ -25,11 +25,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 import static org.embulk.spi.util.RetryExecutor.retryExecutor;
 
@@ -50,7 +45,7 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     private int fileIndex = 0;
     private int callCount = 0;
     private BufferedOutputStream currentStream = null;
-    private Future<StorageObject> currentUpload = null;
+    private StorageObject currentUpload = null;
     private File tempFile = null;
 
     GcsTransactionalFileOutput(PluginTask task, Storage client, int taskIndex)
@@ -135,40 +130,22 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
 
     private void closeCurrentUpload()
     {
-        try {
-            if (currentUpload != null) {
-                StorageObject obj = currentUpload.get();
-                storageObjects.add(obj);
-                logger.info("Uploaded '{}/{}' to {}bytes", obj.getBucket(), obj.getName(), obj.getSize());
-                currentUpload = null;
-            }
+        if (currentUpload != null) {
+            StorageObject obj = currentUpload;
+            storageObjects.add(obj);
+            logger.info("Uploaded '{}/{}' to {}bytes", obj.getBucket(), obj.getName(), obj.getSize());
+            currentUpload = null;
+        }
 
-            callCount = 0;
-        }
-        catch (InterruptedException | ExecutionException ex) {
-            throw Throwables.propagate(ex);
-        }
+        callCount = 0;
     }
 
-    private Future<StorageObject> startUpload(final String path)
+    private StorageObject startUpload(final String path)
     {
         try {
-            final ExecutorService executor = Executors.newCachedThreadPool();
             final String hash = getLocalMd5hash(tempFile.getAbsolutePath());
 
-            return executor.submit(new Callable<StorageObject>() {
-                @Override
-                public StorageObject call() throws IOException
-                {
-                    try {
-                        logger.info("Uploading '{}/{}'", bucket, path);
-                        return execUploadWithRetry(path, hash);
-                    }
-                    finally {
-                        executor.shutdown();
-                    }
-                }
-            });
+            return execUploadWithRetry(path, hash);
         }
         catch (IOException ex) {
             throw Throwables.propagate(ex);
@@ -184,7 +161,7 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
                 .withMaxRetryWait(30 * 1000)
                 .runInterruptible(new Retryable<StorageObject>() {
                 @Override
-                public StorageObject call() throws IOException, RetryGiveupException
+                public StorageObject call() throws IOException
                 {
                     try (final BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile))) {
                         InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
