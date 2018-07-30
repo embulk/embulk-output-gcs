@@ -11,7 +11,6 @@ import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigSource;
 import org.embulk.config.TaskReport;
 import org.embulk.config.TaskSource;
-import org.embulk.output.GcsOutputPlugin.PluginTask;
 import org.embulk.spi.Buffer;
 import org.embulk.spi.Exec;
 import org.embulk.spi.FileOutputPlugin;
@@ -98,7 +97,7 @@ public class TestGcsOutputPlugin
                 .set("file_ext", ".csv")
                 .set("formatter", formatterConfig());
 
-        GcsOutputPlugin.PluginTask task = config.loadConfig(PluginTask.class);
+        PluginTask task = config.loadConfig(PluginTask.class);
         assertEquals("private_key", task.getAuthMethod().toString());
     }
 
