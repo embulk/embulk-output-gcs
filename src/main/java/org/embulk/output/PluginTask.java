@@ -27,7 +27,7 @@ public interface PluginTask extends Task
 
     @Config("auth_method")
     @ConfigDefault("\"private_key\"")
-    GcsOutputPlugin.AuthMethod getAuthMethod();
+    AuthMethod getAuthMethod();
 
     @Config("service_account_email")
     @ConfigDefault("null")

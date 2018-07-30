@@ -378,23 +378,4 @@ public class GcsOutputPlugin implements FileOutputPlugin
         String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
         return path.replaceFirst("^\\.*/*", "");
     }
-
-    public enum AuthMethod
-    {
-        private_key("private_key"),
-        compute_engine("compute_engine"),
-        json_key("json_key");
-
-        private final String string;
-
-        AuthMethod(String string)
-        {
-            this.string = string;
-        }
-
-        public String getString()
-        {
-            return string;
-        }
-    }
 }
