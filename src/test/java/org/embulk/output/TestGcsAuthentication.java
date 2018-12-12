@@ -2,7 +2,6 @@ package org.embulk.output;
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
 import com.google.api.services.storage.Storage;
-import com.google.common.base.Optional;
 
 import org.embulk.EmbulkTestRuntime;
 
@@ -18,6 +17,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.security.GeneralSecurityException;
+import java.util.Optional;
 
 public class TestGcsAuthentication
 {
