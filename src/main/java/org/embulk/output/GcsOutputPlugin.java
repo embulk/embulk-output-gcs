@@ -1,8 +1,6 @@
 package org.embulk.output;
 
 import com.google.api.services.storage.Storage;
-import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
 import org.embulk.config.ConfigDiff;
 import org.embulk.config.ConfigException;
@@ -17,6 +15,8 @@ import org.embulk.spi.unit.LocalFile;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 
 public class GcsOutputPlugin implements FileOutputPlugin
 {
@@ -84,8 +84,8 @@ public class GcsOutputPlugin implements FileOutputPlugin
             return new GcsAuthentication(
                     task.getAuthMethod().getString(),
                     task.getServiceAccountEmail(),
-                    task.getP12Keyfile().transform(localFileToPathString()),
-                    task.getJsonKeyfile().transform(localFileToPathString()),
+                    task.getP12Keyfile().map(localFileToPathString()),
+                    task.getJsonKeyfile().map(localFileToPathString()),
                     task.getApplicationName()
             );
         }
