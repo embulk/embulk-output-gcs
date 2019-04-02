@@ -16,12 +16,14 @@ Google Cloud Storage output plugin for [Embulk](https://github.com/embulk/embulk
 - **bucket**: Google Cloud Storage bucket name (string, required)
 - **path_prefix**: Prefix of output keys (string, required)
 - **file_ext**: Extention of output file (string, required)
+- **sequence_format**: Format of the sequence number of the output files (string, default value is ".%03d.%02d")
 - **content_type**: content type of output file (string, optional, default value is "application/octet-stream")
 - **auth_method**: Authentication method `private_key`, `json_key` or `compute_engine` (string, optional, default value is "private_key")
 - **service_account_email**: Google Cloud Platform service account email (string, required when auth_method is private_key)
 - **p12_keyfile**: Private key file fullpath of Google Cloud Platform service account (string, required when auth_method is private_key)
 - **json_keyfile** fullpath of json_key (string, required when auth_method is json_key)
 - **application_name**: Application name, anything you like (string, optional, default value is "embulk-output-gcs")
+- **max_connection_retry**: Number of connection retries to GCS (number, default value is 10)
 
 ## Example
 
