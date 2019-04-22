@@ -152,7 +152,8 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
         }
         finally {
             try {
-                logger.info("Delete generated file: {} > {}", tempFile, tempFile.delete());
+                boolean isDeleted = tempFile.delete();
+                logger.info("Delete generated file: {} > {}", tempFile, isDeleted);
             }
             catch (Exception e) {
                 logger.warn("Failed to delete generated file: {} due to {}", tempFile, e.getMessage());
