@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/hakobera/embulk-output-gcs.svg?branch=master)](https://travis-ci.org/hakobera/embulk-output-gcs)
+[![Build Status](https://travis-ci.org/embulk/embulk-output-gcs.svg?branch=master)](https://travis-ci.org/embulk/embulk-output-gcs)
 
 # Google Cloud Storage output plugin for Embulk
 
