@@ -150,6 +150,14 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
         catch (IOException ex) {
             throw Throwables.propagate(ex);
         }
+        finally {
+            try {
+                logger.info("Delete generated file: {} > {}", tempFile, tempFile.delete());
+            }
+            catch (Exception e) {
+                logger.warn("Failed to delete generated file: {} due to {}", tempFile, e.getMessage());
+            }
+        }
     }
 
     private StorageObject execUploadWithRetry(final String path, final String localHash) throws IOException
