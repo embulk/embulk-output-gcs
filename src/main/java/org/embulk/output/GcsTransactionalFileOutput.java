@@ -1,5 +1,8 @@
 package org.embulk.output;
 
+import com.google.api.client.googleapis.media.MediaHttpUploader;
+import com.google.api.client.http.GenericUrl;
+import com.google.api.client.http.HttpResponse;
 import com.google.api.client.http.InputStreamContent;
 import com.google.api.client.repackaged.org.apache.commons.codec.binary.Base64;
 import com.google.api.services.storage.Storage;
@@ -7,6 +10,8 @@ import com.google.api.services.storage.model.StorageObject;
 import com.google.common.base.Throwables;
 import org.embulk.config.ConfigException;
 import org.embulk.config.TaskReport;
+import org.embulk.output.lib.GCSMediaHttpUploader;
+import org.embulk.output.lib.GCSMediaHttpUploaderProgressListener;
 import org.embulk.spi.Buffer;
 import org.embulk.spi.Exec;
 import org.embulk.spi.TransactionalFileOutput;
@@ -163,61 +168,98 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
 
     private StorageObject execUploadWithRetry(final String path, final String localHash) throws IOException
     {
-        try {
-            return retryExecutor()
-                .withRetryLimit(maxConnectionRetry)
-                .withInitialRetryWait(500)
-                .withMaxRetryWait(30 * 1000)
-                .runInterruptible(new Retryable<StorageObject>() {
+        try (final BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile))) {
+            InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
+            mediaContent.setCloseInputStream(true);
+            mediaContent.setLength(tempFile.length());
+
+            StorageObject objectMetadata = new StorageObject();
+            objectMetadata.setName(path);
+
+            final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
+            GCSMediaHttpUploader gcsMediaHttpUploader = new GCSMediaHttpUploader(mediaContent, insert.getMediaHttpUploader().getTransport(), insert.getAbstractGoogleClient().getRequestFactory().getInitializer());
+            gcsMediaHttpUploader.setDisableGZipContent(true);
+            gcsMediaHttpUploader.setMetadata(insert.getMediaHttpUploader().getMetadata());
+            GCSMediaHttpUploaderProgressListener uploaderProgressListener = new GCSMediaHttpUploaderProgressListener() {
                 @Override
-                public StorageObject call() throws IOException
+                public void progressChanged(final MediaHttpUploader uploader)
                 {
-                    try (final BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile))) {
-                        InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
-                        mediaContent.setCloseInputStream(true);
+                }
 
-                        StorageObject objectMetadata = new StorageObject();
-                        objectMetadata.setName(path);
-
-                        final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
-                        insert.setDisableGZipContent(true);
-                        StorageObject obj = insert.execute();
-
-                        logger.info(String.format("Local Hash(MD5): %s / Remote Hash(MD5): %s", localHash, obj.getMd5Hash()));
-                        return obj;
+                @Override
+                public void progressChanged(final GCSMediaHttpUploader uploader)
+                        throws IOException
+                {
+                    switch (uploader.getUploadState()) {
+                    case INITIATION_STARTED:
+                        System.out.println("Initiation has started!");
+                        break;
+                    case INITIATION_COMPLETE:
+                        System.out.println("Initiation is complete!");
+                        break;
+                    case MEDIA_IN_PROGRESS:
+                        logger.info("Uploaded percent " + uploader.getProgress() * 100 + "%");
+                        break;
+                    case MEDIA_COMPLETE:
+                        System.out.println("Upload is complete!");
                     }
                 }
+            };
+            gcsMediaHttpUploader.setProgressListener(uploaderProgressListener);
 
-                @Override
-                public boolean isRetryableException(Exception exception)
-                {
-                    return true;
-                }
+            try {
+                return retryExecutor()
+                        .withRetryLimit(maxConnectionRetry)
+                        .withInitialRetryWait(500)
+                        .withMaxRetryWait(30 * 1000)
+                        .runInterruptible(new Retryable<StorageObject>()
+                        {
+                            @Override
+                            public StorageObject call()
+                                    throws IOException
+                            {
+                                HttpResponse response;
+                                if (gcsMediaHttpUploader.getUploadState().equals(GCSMediaHttpUploader.UploadState.MEDIA_IN_PROGRESS) && gcsMediaHttpUploader.getUploadUrl() != null) {
+                                    response = gcsMediaHttpUploader.upload(buildResumeHttpRequestUrl(gcsMediaHttpUploader.getUploadUrl().get("upload_id").toString()));
+                                }
+                                else {
+                                    response = gcsMediaHttpUploader.setInitiationHeaders(insert.getRequestHeaders()).setDisableGZipContent(true).upload(buildHttpRequestUrl());
+                                }
+                                response.getRequest().setParser(insert.getAbstractGoogleClient().getObjectParser());
+                                return response.parseAs(StorageObject.class);
+                            }
 
-                @Override
-                public void onRetry(Exception exception, int retryCount, int retryLimit, int retryWait) throws RetryGiveupException
-                {
-                    String message = String.format("GCS put request failed. Retrying %d/%d after %d seconds. Message: %s: %s",
-                                    retryCount, retryLimit, retryWait / 1000, exception.getClass(), exception.getMessage());
-                    if (retryCount % 3 == 0) {
-                        logger.warn(message, exception);
-                    }
-                    else {
-                        logger.warn(message);
-                    }
-                }
+                            @Override
+                            public boolean isRetryableException(Exception exception)
+                            {
+                                return true;
+                            }
 
-                @Override
-                public void onGiveup(Exception firstException, Exception lastException) throws RetryGiveupException
-                {
-                }
-            });
-        }
-        catch (RetryGiveupException ex) {
-            throw Throwables.propagate(ex.getCause());
-        }
-        catch (InterruptedException ex) {
-            throw new InterruptedIOException();
+                            @Override
+                            public void onRetry(Exception exception, int retryCount, int retryLimit, int retryWait)
+                            {
+                                String message = String.format("GCS put request failed. Retrying %d/%d after %d seconds. Message: %s: %s",
+                                        retryCount, retryLimit, retryWait / 1000, exception.getClass(), exception.getMessage());
+                                if (retryCount % 3 == 0) {
+                                    logger.warn(message, exception);
+                                }
+                                else {
+                                    logger.warn(message);
+                                }
+                            }
+
+                            @Override
+                            public void onGiveup(Exception firstException, Exception lastException)
+                            {
+                            }
+                        });
+            }
+            catch (RetryGiveupException ex) {
+                throw Throwables.propagate(ex.getCause());
+            }
+            catch (InterruptedException ex) {
+                throw new InterruptedIOException();
+            }
         }
     }
 
@@ -257,5 +299,15 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     {
         String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
         return path.replaceFirst("^\\.*/*", "");
+    }
+
+    private GenericUrl buildHttpRequestUrl()
+    {
+        return new GenericUrl("https://www.googleapis.com/upload/storage/v1/b/system_test/o?uploadType=resumable");
+    }
+
+    private GenericUrl buildResumeHttpRequestUrl(final String uploadID)
+    {
+        return new GenericUrl("https://www.googleapis.com/upload/storage/v1/b/system_test/o?uploadType=resumable&upload_id=" + uploadID);
     }
 }
