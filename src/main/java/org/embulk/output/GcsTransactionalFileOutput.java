@@ -226,7 +226,10 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
                                     response = gcsMediaHttpUploader.setInitiationHeaders(insert.getRequestHeaders()).setDisableGZipContent(true).upload(buildHttpRequestUrl());
                                 }
                                 response.getRequest().setParser(insert.getAbstractGoogleClient().getObjectParser());
-                                return response.parseAs(StorageObject.class);
+
+                                StorageObject obj = response.parseAs(StorageObject.class);
+                                logger.info(String.format("Local Hash(MD5): %s / Remote Hash(MD5): %s", localHash, obj.getMd5Hash()));
+                                return obj;
                             }
 
                             @Override
