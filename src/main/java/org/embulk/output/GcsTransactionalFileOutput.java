@@ -192,16 +192,16 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
                 {
                     switch (uploader.getUploadState()) {
                     case INITIATION_STARTED:
-                        System.out.println("Initiation has started!");
+                        logger.info("Initiation has started!");
                         break;
                     case INITIATION_COMPLETE:
-                        System.out.println("Initiation is complete!");
+                        logger.info("Initiation is complete!");
                         break;
                     case MEDIA_IN_PROGRESS:
                         logger.info("Uploaded percent " + uploader.getProgress() * 100 + "%");
                         break;
                     case MEDIA_COMPLETE:
-                        System.out.println("Upload is complete!");
+                        logger.info("Upload is complete!");
                     }
                 }
             };
@@ -306,11 +306,11 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
 
     private GenericUrl buildHttpRequestUrl()
     {
-        return new GenericUrl("https://www.googleapis.com/upload/storage/v1/b/system_test/o?uploadType=resumable");
+        return new GenericUrl(String.format("https://www.googleapis.com/upload/storage/v1/b/%s/o?uploadType=resumable", bucket));
     }
 
     private GenericUrl buildResumeHttpRequestUrl(final String uploadID)
     {
-        return new GenericUrl("https://www.googleapis.com/upload/storage/v1/b/system_test/o?uploadType=resumable&upload_id=" + uploadID);
+        return new GenericUrl(String.format("https://www.googleapis.com/upload/storage/v1/b/%s/o?uploadType=resumable&upload_id=%s", bucket, uploadID));
     }
 }
