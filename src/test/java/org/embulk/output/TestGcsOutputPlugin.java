@@ -1,6 +1,9 @@
 package org.embulk.output;
 
+import com.google.api.client.http.InputStreamContent;
 import com.google.api.services.storage.Storage;
+import com.google.api.services.storage.Storage.Objects.Get;
+import com.google.api.services.storage.model.StorageObject;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -28,7 +31,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assume.assumeNotNull;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -99,6 +104,7 @@ public class TestGcsOutputPlugin
 
         PluginTask task = config.loadConfig(PluginTask.class);
         assertEquals("private_key", task.getAuthMethod().toString());
+        assertEquals(false, task.getDeleteInAdvance());
     }
 
     // p12_keyfile is null when auth_method is private_key
@@ -296,6 +302,30 @@ public class TestGcsOutputPlugin
         assertEquals("sample.000.01.csv", method.invoke(plugin, "......///sample", task.getSequenceFormat(), 0, 1, ".csv"));
     }
 
+    @Test
+    public void testDeleteFilesInAdvanceSuccessfully() throws Exception
+    {
+        ConfigSource configSource = config();
+        PluginTask task = configSource.loadConfig(PluginTask.class);
+
+        Method createClientMethod = GcsOutputPlugin.class.getDeclaredMethod("createClient", PluginTask.class);
+        createClientMethod.setAccessible(true);
+        Storage client = (Storage) createClientMethod.invoke(plugin, task);
+
+        uploadEmptyFile(client, task.getBucket(), task.getPathPrefix() + ".001.csv");
+        uploadEmptyFile(client, task.getBucket(), task.getPathPrefix() + ".002.csv");
+
+        assertEquals(true, isFileExist(client, task.getBucket(), task.getPathPrefix() + ".001.csv"));
+        assertEquals(true, isFileExist(client, task.getBucket(), task.getPathPrefix() + ".002.csv"));
+
+        Method deleteFilesMethod = GcsOutputPlugin.class.getDeclaredMethod("deleteFiles", PluginTask.class);
+        deleteFilesMethod.setAccessible(true);
+        deleteFilesMethod.invoke(plugin, task);
+
+        assertEquals(false, isFileExist(client, task.getBucket(), task.getPathPrefix() + ".001.csv"));
+        assertEquals(false, isFileExist(client, task.getBucket(), task.getPathPrefix() + ".002.csv"));
+    }
+
     public ConfigSource config()
     {
         return Exec.newConfigSource()
@@ -414,6 +444,23 @@ public class TestGcsOutputPlugin
             builder.add(records);
         }
         return builder.build();
+    }
+
+    private static void uploadEmptyFile(Storage client, String gcsBucket, String gcsPath) throws IOException
+    {
+        InputStreamContent content = new InputStreamContent("text/plain", new ByteArrayInputStream(new byte[0]));
+        StorageObject object = new StorageObject().setName(gcsPath);
+        client.objects().insert(gcsBucket, object, content).execute();
+    }
+
+    private static boolean isFileExist(Storage client, String gcsBucket, String gcsPath)
+    {
+        try {
+            client.objects().get(gcsBucket, gcsPath).setAlt("json").execute();
+        } catch (IOException ex) {
+            return false;
+        }
+        return true;
     }
 
     private static String getDirectory(String dir)

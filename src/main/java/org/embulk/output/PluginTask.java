@@ -55,4 +55,8 @@ public interface PluginTask extends Task
     @Config("max_connection_retry")
     @ConfigDefault("10") // 10 times retry to connect GCS server if failed.
     int getMaxConnectionRetry();
+
+    @Config("delete_in_advance")
+    @ConfigDefault("false")
+    boolean getDeleteInAdvance();
 }
