@@ -24,6 +24,7 @@ Google Cloud Storage output plugin for [Embulk](https://github.com/embulk/embulk
 - **json_keyfile** fullpath of json_key (string, required when auth_method is json_key)
 - **application_name**: Application name, anything you like (string, optional, default value is "embulk-output-gcs")
 - **max_connection_retry**: Number of connection retries to GCS (number, default value is 10)
+- **delete_in_advance**: Delete Bucket/Prefix matched files in advance (boolean, default value is false)
 
 ## Example
 
