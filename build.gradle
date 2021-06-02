@@ -1,42 +1,149 @@
 plugins {
-    id "com.jfrog.bintray" version "1.1"
-    id "com.github.jruby-gradle.base" version "0.1.5"
     id "java"
+    id "maven-publish"
+    id "signing"
+    id "org.embulk.embulk-plugins" version "0.4.2"
     id "checkstyle"
-    id "jacoco"
 }
-import com.github.jrubygradle.JRubyExec
+
 repositories {
     mavenCentral()
     jcenter()
-}
-configurations {
-    provided
 }
 
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
-version = "0.4.4"
+group = "org.embulk"
+version = "0.5.0-SNAPSHOT"
+description = "Dumps records to Google Cloud Storage."
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs << "-Xlint:deprecation" << "-Xlint:unchecked"
+    options.encoding = "UTF-8"
+}
+
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
 
 dependencies {
-    compile  "org.embulk:embulk-core:0.9.11"
-    provided "org.embulk:embulk-core:0.9.11"
+    compileOnly "org.embulk:embulk-core:0.9.23"
 
-    compile "com.google.http-client:google-http-client-jackson2:1.19.0"
-    compile ("com.google.apis:google-api-services-storage:v1-rev28-1.19.1") {exclude module: "guava-jdk5"}
+    compile("com.google.http-client:google-http-client-jackson2:1.19.0") {
+        exclude group: "com.fasterxml.jackson.core", module: "jackson-core"
+    }
+    compile ("com.google.apis:google-api-services-storage:v1-rev28-1.19.1") {
+        exclude module: "guava-jdk5"
+        exclude group: "com.fasterxml.jackson.core", module: "jackson-core"
+    }
 
     testCompile "junit:junit:4.12"
-    testCompile "org.embulk:embulk-core:0.9.11:tests"
-    testCompile "org.embulk:embulk-standards:0.9.11"
+    testCompile "org.embulk:embulk-core:0.9.23:tests"
+    testCompile "org.embulk:embulk-standards:0.9.23"
+    testCompile "org.embulk:embulk-deps-buffer:0.9.23"
+    testCompile "org.embulk:embulk-deps-config:0.9.23"
 }
 
-task classpath(type: Copy, dependsOn: ["jar"]) {
-    doFirst { file("classpath").deleteDir() }
-    from (configurations.runtime - configurations.provided + files(jar.archivePath))
-    into "classpath"
+embulkPlugin {
+    mainClass = "org.embulk.output.GcsOutputPlugin"
+    category = "output"
+    type = "gcs"
 }
-clean { delete 'classpath' }
+
+javadoc {
+    options {
+        locale = "en_US"
+        encoding = "UTF-8"
+    }
+}
+
+jar {
+    from rootProject.file("LICENSE")
+}
+
+sourcesJar {
+    from rootProject.file("LICENSE")
+}
+
+javadocJar {
+    from rootProject.file("LICENSE")
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId = project.group
+            artifactId = project.name
+
+            from components.java  // Must be "components.java". The dependency modification works only for it.
+            // javadocJar and sourcesJar are added by java.withJavadocJar() and java.withSourcesJar() above.
+            // See: https://docs.gradle.org/current/javadoc/org/gradle/api/plugins/JavaPluginExtension.html
+
+            pom {  // https://central.sonatype.org/pages/requirements.html
+                packaging "jar"
+
+                name = project.name
+                description = project.description
+                url = "https://www.embulk.org/"
+
+                licenses {
+                    license {
+                        // http://central.sonatype.org/pages/requirements.html#license-information
+                        name = "MIT License"
+                        url = "http://www.opensource.org/licenses/mit-license.php"
+                    }
+                }
+
+                scm {
+                    connection = "scm:git:git://github.com/embulk/embulk-output-gcs.git"
+                    developerConnection = "scm:git:git@github.com:embulk/embulk-output-gcs.git"
+                    url = "https://github.com/embulk/embulk-output-gcs"
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {  // publishMavenPublicationToMavenCentralRepository
+            name = "mavenCentral"
+            if (project.version.endsWith("-SNAPSHOT")) {
+                url "https://oss.sonatype.org/content/repositories/snapshots"
+            } else {
+                url "https://oss.sonatype.org/service/local/staging/deploy/maven2"
+            }
+
+            credentials {
+                username = project.hasProperty("ossrhUsername") ? ossrhUsername : ""
+                password = project.hasProperty("ossrhPassword") ? ossrhPassword : ""
+            }
+        }
+    }
+}
+
+signing {
+    sign publishing.publications.maven
+}
+
+gem {
+    authors = [ "Kazuyuki Honda" ]
+    email = [ "hakobera@gmail.com" ]
+    summary = "Google Cloud Storage output plugin for Embulk"
+    homepage = "https://github.com/embulk/embulk-output-gcs"
+    licenses = [ "MIT" ]
+}
+
+gemPush {
+    host = "https://rubygems.org"
+}
+
+test {
+    testLogging {
+        outputs.upToDateWhen { false }
+        showStandardStreams = true
+    }
+}
 
 checkstyle {
     configFile = file("${project.rootDir}/config/checkstyle/checkstyle.xml")
@@ -53,39 +160,4 @@ checkstyleTest {
 task checkstyle(type: Checkstyle) {
     classpath = sourceSets.main.output + sourceSets.test.output
     source = sourceSets.main.allJava + sourceSets.test.allJava
-}
-
-task gem(type: JRubyExec, dependsOn: ["build", "gemspec", "classpath"]) {
-    jrubyArgs "-rrubygems/gem_runner", "-eGem::GemRunner.new.run(ARGV)", "build"
-    script "build/gemspec"
-    doLast { ant.move(file: "${project.name}-${project.version}.gem", todir: "pkg") }
-}
-
-task gemspec {
-    doLast { file("build/gemspec").write($/
-Gem::Specification.new do |spec|
-  spec.name          = "${project.name}"
-  spec.version       = "${project.version}"
-  spec.authors       = ["Kazuyuki Honda"]
-  spec.summary       = %[Google Cloud Storage output plugin for Embulk]
-  spec.description   = %["Dumps records to Google Cloud Storage."]
-  spec.email         = ["hakobera@gmail.com"]
-  spec.licenses      = ["MIT"]
-  spec.homepage      = "https://github.com/hakobera/embulk-output-gcs"
-
-  spec.files         = `git ls-files`.split("\n") + Dir["classpath/*.jar"]
-  spec.test_files    = spec.files.grep(%r"^(test|spec)/")
-  spec.require_paths = ["lib"]
-
-  spec.add_development_dependency 'bundler', ['~> 1.0']
-  spec.add_development_dependency 'rake', ['>= 10.0']
-end
-/$)
-    }
-}
-
-task gempush {
-    doLast {
-        "gem push pkg/embulk-output-gcs-${project.version}.gem".execute().waitFor()
-    }
 }
