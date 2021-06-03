@@ -10,7 +10,10 @@ import org.embulk.config.TaskSource;
 import org.embulk.spi.Exec;
 import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.TransactionalFileOutput;
-import org.embulk.spi.unit.LocalFile;
+import org.embulk.util.config.ConfigMapper;
+import org.embulk.util.config.ConfigMapperFactory;
+import org.embulk.util.config.TaskMapper;
+import org.embulk.util.config.units.LocalFile;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -25,7 +28,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
                                   int taskCount,
                                   FileOutputPlugin.Control control)
     {
-        PluginTask task = config.loadConfig(PluginTask.class);
+        final PluginTask task = CONFIG_MAPPER.map(config, PluginTask.class);
 
         if (task.getP12KeyfilePath().isPresent()) {
             if (task.getP12Keyfile().isPresent()) {
@@ -59,7 +62,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
                              FileOutputPlugin.Control control)
     {
         control.run(taskSource);
-        return Exec.newConfigDiff();
+        return CONFIG_MAPPER_FACTORY.newConfigDiff();
     }
 
     @Override
@@ -72,7 +75,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
     @Override
     public TransactionalFileOutput open(TaskSource taskSource, final int taskIndex)
     {
-        PluginTask task = taskSource.loadTask(PluginTask.class);
+        final PluginTask task = TASK_MAPPER.map(taskSource, PluginTask.class);
 
         Storage client = createClient(task);
         return new GcsTransactionalFileOutput(task, client, taskIndex);
@@ -115,4 +118,8 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         };
     }
+
+    static final ConfigMapperFactory CONFIG_MAPPER_FACTORY = ConfigMapperFactory.builder().addDefaultModules().build();
+    static final ConfigMapper CONFIG_MAPPER = CONFIG_MAPPER_FACTORY.createConfigMapper();
+    static final TaskMapper TASK_MAPPER = CONFIG_MAPPER_FACTORY.createTaskMapper();
 }

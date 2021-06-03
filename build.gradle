@@ -29,21 +29,50 @@ java {
 }
 
 dependencies {
-    compileOnly "org.embulk:embulk-core:0.9.23"
+    compileOnly "org.embulk:embulk-api:0.10.31"
+    compileOnly "org.embulk:embulk-spi:0.10.31"
 
     compile("com.google.http-client:google-http-client-jackson2:1.19.0") {
+        // It conflicts with embulk-core. They are once excluded here,
+        // and added explicitly with versions exactly the same with embulk-core:0.10.31.
         exclude group: "com.fasterxml.jackson.core", module: "jackson-core"
     }
     compile ("com.google.apis:google-api-services-storage:v1-rev28-1.19.1") {
+        // They conflict with embulk-core. They are once excluded here,
+        // and added explicitly with versions exactly the same with embulk-core:0.10.31.
         exclude module: "guava-jdk5"
         exclude group: "com.fasterxml.jackson.core", module: "jackson-core"
     }
 
+    compile("org.embulk:embulk-util-config:0.3.0") {
+        // They conflict with embulk-core. They are once excluded here,
+        // and added explicitly with versions exactly the same with embulk-core:0.10.31.
+        exclude group: "com.fasterxml.jackson.core", module: "jackson-annotations"
+        exclude group: "com.fasterxml.jackson.core", module: "jackson-core"
+        exclude group: "com.fasterxml.jackson.core", module: "jackson-databind"
+        exclude group: "com.fasterxml.jackson.datatype", module: "jackson-datatype-jdk8"
+        exclude group: "javax.validation", module: "validation-api"
+    }
+
+    compile "org.embulk:embulk-util-retryhelper:0.8.2"
+
+    // They are once excluded from transitive dependencies of other dependencies,
+    // and added explicitly with versions exactly the same with embulk-core:0.10.31.
+    compile "com.fasterxml.jackson.core:jackson-annotations:2.6.7"
+    compile "com.fasterxml.jackson.core:jackson-core:2.6.7"
+    compile "com.fasterxml.jackson.core:jackson-databind:2.6.7"
+    compile "com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.6.7"
+    compile "javax.validation:validation-api:1.1.0.Final"
+    compile "com.google.guava:guava:18.0"
+
     testCompile "junit:junit:4.12"
-    testCompile "org.embulk:embulk-core:0.9.23:tests"
-    testCompile "org.embulk:embulk-standards:0.9.23"
-    testCompile "org.embulk:embulk-deps-buffer:0.9.23"
-    testCompile "org.embulk:embulk-deps-config:0.9.23"
+    testCompile "org.embulk:embulk-core:0.10.31"
+    testCompile "org.embulk:embulk-core:0.10.31:tests"
+    testCompile "org.embulk:embulk-deps:0.10.31"
+    testCompile "org.embulk:embulk-junit4:0.10.31"
+    testCompile "org.embulk:embulk-formatter-csv:0.10.31"
+    testCompile "org.embulk:embulk-input-file:0.10.31"
+    testCompile "org.embulk:embulk-parser-csv:0.10.31"
 }
 
 embulkPlugin {
