@@ -15,10 +15,11 @@ import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import org.embulk.config.ConfigException;
 import org.embulk.spi.Exec;
-import org.embulk.spi.util.RetryExecutor.RetryGiveupException;
-import org.embulk.spi.util.RetryExecutor.Retryable;
+import org.embulk.util.retryhelper.RetryExecutor;
+import org.embulk.util.retryhelper.RetryGiveupException;
+import org.embulk.util.retryhelper.Retryable;
 import org.slf4j.Logger;
-import static org.embulk.spi.util.RetryExecutor.retryExecutor;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -31,7 +32,7 @@ import java.util.Optional;
 
 public class GcsAuthentication
 {
-    private final Logger log = Exec.getLogger(GcsAuthentication.class);
+    private final Logger log = LoggerFactory.getLogger(GcsAuthentication.class);
     private final Optional<String> serviceAccountEmail;
     private final Optional<String> p12KeyFilePath;
     private final Optional<String> jsonKeyFilePath;
@@ -108,10 +109,11 @@ public class GcsAuthentication
     public Storage getGcsClient(final String bucket, int maxConnectionRetry) throws ConfigException, IOException
     {
         try {
-            return retryExecutor()
+            return RetryExecutor.builder()
                     .withRetryLimit(maxConnectionRetry)
-                    .withInitialRetryWait(500)
-                    .withMaxRetryWait(30 * 1000)
+                    .withInitialRetryWaitMillis(500)
+                    .withMaxRetryWaitMillis(30 * 1000)
+                    .build()
                     .runInterruptible(new Retryable<Storage>() {
                         @Override
                         public Storage call() throws IOException, RetryGiveupException

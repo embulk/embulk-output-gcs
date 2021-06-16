@@ -10,9 +10,11 @@ import org.embulk.config.TaskReport;
 import org.embulk.spi.Buffer;
 import org.embulk.spi.Exec;
 import org.embulk.spi.TransactionalFileOutput;
-import org.embulk.spi.util.RetryExecutor.RetryGiveupException;
-import org.embulk.spi.util.RetryExecutor.Retryable;
+import org.embulk.util.retryhelper.RetryExecutor;
+import org.embulk.util.retryhelper.RetryGiveupException;
+import org.embulk.util.retryhelper.Retryable;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -26,11 +28,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.embulk.spi.util.RetryExecutor.retryExecutor;
-
 public class GcsTransactionalFileOutput implements TransactionalFileOutput
 {
-    private static final Logger logger = Exec.getLogger(GcsTransactionalFileOutput.class);
+    private static final Logger logger = LoggerFactory.getLogger(GcsTransactionalFileOutput.class);
 
     private final int taskIndex;
     private final Storage client;
@@ -123,7 +123,7 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     @Override
     public TaskReport commit()
     {
-        TaskReport report = Exec.newTaskReport();
+        TaskReport report = GcsOutputPlugin.CONFIG_MAPPER_FACTORY.newTaskReport();
         report.set("files", storageObjects);
         return report;
     }
@@ -164,10 +164,11 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     private StorageObject execUploadWithRetry(final String path, final String localHash) throws IOException
     {
         try {
-            return retryExecutor()
+            return RetryExecutor.builder()
                 .withRetryLimit(maxConnectionRetry)
-                .withInitialRetryWait(500)
-                .withMaxRetryWait(30 * 1000)
+                .withInitialRetryWaitMillis(500)
+                .withMaxRetryWaitMillis(30 * 1000)
+                .build()
                 .runInterruptible(new Retryable<StorageObject>() {
                 @Override
                 public StorageObject call() throws IOException
