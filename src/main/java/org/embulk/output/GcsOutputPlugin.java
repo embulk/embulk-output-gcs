@@ -1,13 +1,13 @@
 package org.embulk.output;
 
 import com.google.api.services.storage.Storage;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
 import org.embulk.config.ConfigDiff;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigSource;
 import org.embulk.config.TaskReport;
 import org.embulk.config.TaskSource;
-import org.embulk.spi.Exec;
 import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.TransactionalFileOutput;
 import org.embulk.util.config.ConfigMapper;
@@ -53,7 +53,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         }
 
-        return resume(task.dump(), taskCount, control);
+        return resume(task.toTaskSource(), taskCount, control);
     }
 
     @Override
@@ -97,7 +97,8 @@ public class GcsOutputPlugin implements FileOutputPlugin
         }
     }
 
-    private Storage createClient(final PluginTask task)
+    @VisibleForTesting
+    protected Storage createClient(final PluginTask task)
     {
         try {
             GcsAuthentication auth = newGcsAuth(task);

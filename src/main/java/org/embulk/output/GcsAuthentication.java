@@ -14,7 +14,6 @@ import com.google.api.services.storage.StorageScopes;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import org.embulk.config.ConfigException;
-import org.embulk.spi.Exec;
 import org.embulk.util.retryhelper.RetryExecutor;
 import org.embulk.util.retryhelper.RetryGiveupException;
 import org.embulk.util.retryhelper.Retryable;
