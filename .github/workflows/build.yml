@@ -12,16 +12,16 @@ jobs:
       - name: Test
         run: ./gradlew --stacktrace test
         env:
-          GCP_EMAIL: ${{ secrets.GCP_EMAIL }}
-          GCP_P12_KEYFILE: ${{ secrets.GCP_P12_KEYFILE }}
-          GCP_JSON_KEYFILE: ${{ secrets.GCP_JSON_KEYFILE }}
-          GCP_BUCKET: ${{ secrets.GCP_BUCKET }}
-          GCP_BUCKET_DIRECTORY: ${{ secrets.GCP_BUCKET_DIRECTORY }}
+          GCP_EMAIL: "${{ secrets.GCP_EMAIL }}"
+          GCP_P12_KEYFILE: "${{ secrets.GCP_P12_KEYFILE }}"
+          GCP_JSON_KEYFILE: "${{ secrets.GCP_JSON_KEYFILE }}"
+          GCP_BUCKET: "${{ secrets.GCP_BUCKET }}"
+          GCP_BUCKET_DIRECTORY: "${{ secrets.GCP_BUCKET_DIRECTORY }}"
       - name: Report
         run: ./gradlew jacocoTestReport coveralls
         env:
-          GCP_EMAIL: ${{ secrets.GCP_EMAIL }}
-          GCP_P12_KEYFILE: ${{ secrets.GCP_P12_KEYFILE }}
-          GCP_JSON_KEYFILE: ${{ secrets.GCP_JSON_KEYFILE }}
-          GCP_BUCKET: ${{ secrets.GCP_BUCKET }}
-          GCP_BUCKET_DIRECTORY: ${{ secrets.GCP_BUCKET_DIRECTORY }}
+          GCP_EMAIL: "${{ secrets.GCP_EMAIL }}"
+          GCP_P12_KEYFILE: "${{ secrets.GCP_P12_KEYFILE }}"
+          GCP_JSON_KEYFILE: "${{ secrets.GCP_JSON_KEYFILE }}"
+          GCP_BUCKET: "${{ secrets.GCP_BUCKET }}"
+          GCP_BUCKET_DIRECTORY: "${{ secrets.GCP_BUCKET_DIRECTORY }}"
