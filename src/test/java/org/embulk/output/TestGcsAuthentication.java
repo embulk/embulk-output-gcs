@@ -6,6 +6,7 @@ import com.google.api.services.storage.Storage;
 import org.embulk.EmbulkTestRuntime;
 
 import org.embulk.config.ConfigException;
+import org.embulk.util.config.units.LocalFile;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
@@ -37,9 +38,11 @@ public class TestGcsAuthentication
     @BeforeClass
     public static void initializeConstant()
     {
+        LocalFile p12 = LocalFile.ofContent(System.getenv("GCP_P12_KEYFILE"));
+        LocalFile json = LocalFile.ofContent(System.getenv("GCP_JSON_KEYFILE"));
         GCP_EMAIL = Optional.of(System.getenv("GCP_EMAIL"));
-        GCP_P12_KEYFILE = Optional.of(System.getenv("GCP_P12_KEYFILE"));
-        GCP_JSON_KEYFILE = Optional.of(System.getenv("GCP_JSON_KEYFILE"));
+        GCP_P12_KEYFILE = Optional.of(p12.getPath().toString());
+        GCP_JSON_KEYFILE = Optional.of(json.getPath().toString());
         GCP_BUCKET = System.getenv("GCP_BUCKET");
         // skip test cases, if environment variables are not set.
         assumeNotNull(GCP_EMAIL, GCP_P12_KEYFILE, GCP_JSON_KEYFILE, GCP_BUCKET);
@@ -53,10 +56,10 @@ public class TestGcsAuthentication
             throws NoSuchFieldException, IllegalAccessException, GeneralSecurityException, IOException
     {
         GcsAuthentication auth = new GcsAuthentication(
-                "private_key",
+                "json_key",
                 GCP_EMAIL,
                 GCP_P12_KEYFILE,
-                null,
+                GCP_JSON_KEYFILE,
                 GCP_APPLICATION_NAME
         );
 
@@ -78,55 +81,6 @@ public class TestGcsAuthentication
                 null,
                 GCP_APPLICATION_NAME
         );
-    }
-
-    @Test
-    public void testGetGcsClientUsingServiceAccountCredentialSuccess() throws Exception
-    {
-        GcsAuthentication auth = new GcsAuthentication(
-                "private_key",
-                GCP_EMAIL,
-                GCP_P12_KEYFILE,
-                null,
-                GCP_APPLICATION_NAME
-        );
-
-        Storage client = auth.getGcsClient(GCP_BUCKET, 3);
-
-        assertEquals(Storage.class, client.getClass());
-    }
-
-    @Test(expected = ConfigException.class)
-    public void testGetGcsClientUsingServiceAccountCredentialThrowConfigException() throws Exception
-    {
-        GcsAuthentication auth = new GcsAuthentication(
-                "private_key",
-                GCP_EMAIL,
-                GCP_P12_KEYFILE,
-                null,
-                GCP_APPLICATION_NAME
-        );
-
-        Storage client = auth.getGcsClient("non-exists-bucket", 3);
-
-        assertEquals(Storage.class, client.getClass());
-    }
-
-    @Test
-    public void testGetServiceAccountCredentialFromJsonFileSuccess()
-            throws NoSuchFieldException, IllegalAccessException, GeneralSecurityException, IOException
-    {
-        GcsAuthentication auth = new GcsAuthentication(
-                "json_key",
-                GCP_EMAIL,
-                null,
-                GCP_JSON_KEYFILE,
-                GCP_APPLICATION_NAME
-        );
-        Field field = GcsAuthentication.class.getDeclaredField("credentials");
-        field.setAccessible(true);
-
-        assertEquals(GoogleCredential.class, field.get(auth).getClass());
     }
 
     @Test(expected = FileNotFoundException.class)
