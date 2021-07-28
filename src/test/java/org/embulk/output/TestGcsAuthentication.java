@@ -7,6 +7,7 @@ import org.embulk.EmbulkTestRuntime;
 
 import org.embulk.config.ConfigException;
 import org.embulk.util.config.units.LocalFile;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
@@ -27,6 +28,8 @@ public class TestGcsAuthentication
     private static Optional<String> GCP_JSON_KEYFILE;
     private static String GCP_BUCKET;
     private static final String GCP_APPLICATION_NAME = "embulk-output-gcs";
+    private static String p12Content;
+    private static String jsonContent;
 
     /*
      * This test case requires environment variables
@@ -38,18 +41,25 @@ public class TestGcsAuthentication
     @BeforeClass
     public static void initializeConstant()
     {
-        LocalFile p12 = LocalFile.ofContent(System.getenv("GCP_P12_KEYFILE"));
-        LocalFile json = LocalFile.ofContent(System.getenv("GCP_JSON_KEYFILE"));
         GCP_EMAIL = Optional.of(System.getenv("GCP_EMAIL"));
-        GCP_P12_KEYFILE = Optional.of(p12.getPath().toString());
-        GCP_JSON_KEYFILE = Optional.of(json.getPath().toString());
+        p12Content = System.getenv("GCP_P12_KEYFILE");
+        jsonContent = System.getenv("GCP_JSON_KEYFILE");
         GCP_BUCKET = System.getenv("GCP_BUCKET");
         // skip test cases, if environment variables are not set.
-        assumeNotNull(GCP_EMAIL, GCP_P12_KEYFILE, GCP_JSON_KEYFILE, GCP_BUCKET);
+        assumeNotNull(GCP_EMAIL, p12Content, jsonContent, GCP_BUCKET);
     }
 
     @Rule
     public EmbulkTestRuntime runtime = new EmbulkTestRuntime();
+
+    @Before
+    public void init ()
+    {
+        LocalFile p12 = LocalFile.ofContent(p12Content);
+        LocalFile json = LocalFile.ofContent(jsonContent);
+        GCP_P12_KEYFILE = Optional.of(p12.getPath().toString());
+        GCP_JSON_KEYFILE = Optional.of(json.getPath().toString());
+    }
 
     @Test
     public void testGetServiceAccountCredentialSuccess()
