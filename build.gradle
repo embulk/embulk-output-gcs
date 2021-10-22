@@ -17,7 +17,7 @@ configurations {
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
-version = "0.4.4"
+version = "0.4.5"
 
 dependencies {
     compile  "org.embulk:embulk-core:0.9.11"
