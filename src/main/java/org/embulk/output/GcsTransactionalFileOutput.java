@@ -1,8 +1,10 @@
 package org.embulk.output;
 
+import com.google.api.client.googleapis.media.MediaHttpUploaderProgressListener;
 import com.google.api.client.http.InputStreamContent;
 import com.google.api.client.repackaged.org.apache.commons.codec.binary.Base64;
 import com.google.api.services.storage.Storage;
+import com.google.api.services.storage.model.ComposeRequest;
 import com.google.api.services.storage.model.StorageObject;
 import com.google.common.base.Throwables;
 import org.embulk.config.ConfigException;
@@ -43,10 +45,11 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     private final List<StorageObject> storageObjects = new ArrayList<>();
 
     private int fileIndex = 0;
-    private int callCount = 0;
     private BufferedOutputStream currentStream = null;
-    private StorageObject currentUpload = null;
     private File tempFile = null;
+    private boolean isCompose = false;
+    private long bufLen = 0L; // local temp file size
+    private long threshold; // local file size to flush (upload to server)
 
     GcsTransactionalFileOutput(PluginTask task, Storage client, int taskIndex)
     {
@@ -58,6 +61,7 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
         this.sequenceFormat = task.getSequenceFormat();
         this.contentType = task.getContentType();
         this.maxConnectionRetry = task.getMaxConnectionRetry();
+        this.threshold = task.getTempFileThreshold();
     }
 
     public void nextFile()
@@ -77,11 +81,23 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     public void add(Buffer buffer)
     {
         try {
-            logger.debug("#add called {} times for taskIndex {}", callCount, taskIndex);
-            currentStream.write(buffer.array(), buffer.offset(), buffer.limit());
-            callCount++;
+            final int len = buffer.limit();
+            //google allow max chunk size 32.
+            if (bufLen + len > threshold && storageObjects.size() < 31) {
+                currentStream.close();
+                String path = generateRemotePath(pathPrefix, sequenceFormat, taskIndex, fileIndex, pathSuffix) + ".chunk" + storageObjects.size();
+                startUpload(path);
+                // reset output stream
+                tempFile = Exec.getTempFileSpace().createTempFile();
+                currentStream = new BufferedOutputStream(new FileOutputStream(tempFile));
+                bufLen = 0L;
+                isCompose = true;
+            }
+            currentStream.write(buffer.array(), buffer.offset(), len);
+            bufLen += len;
         }
         catch (IOException ex) {
+            cleanChunkFile(storageObjects);
             throw new RuntimeException(ex);
         }
         finally {
@@ -92,27 +108,27 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     @Override
     public void finish()
     {
-        String path = generateRemotePath(pathPrefix, sequenceFormat, taskIndex, fileIndex, pathSuffix);
-        close();
-        if (tempFile != null) {
-            currentUpload = startUpload(path);
-        }
-
         closeCurrentUpload();
+        String path = generateRemotePath(pathPrefix, sequenceFormat, taskIndex, fileIndex, pathSuffix);
+        String uploadPath = isCompose ? path + ".chunk" + storageObjects.size() : path;
+        if (tempFile != null) {
+            startUpload(uploadPath);
+        }
+        if (isCompose) {
+            try {
+                compose(storageObjects, path);
+                logger.info("Compose {} chunks file into {} successful.", storageObjects.size(), path);
+            }
+            finally {
+                cleanChunkFile(storageObjects);
+            }
+        }
     }
 
     @Override
     public void close()
     {
-        try {
-            if (currentStream != null) {
-                currentStream.close();
-                currentStream = null;
-            }
-        }
-        catch (IOException ex) {
-            throw Throwables.propagate(ex);
-        }
+        closeCurrentUpload();
     }
 
     @Override
@@ -130,14 +146,14 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
 
     private void closeCurrentUpload()
     {
-        if (currentUpload != null) {
-            StorageObject obj = currentUpload;
-            storageObjects.add(obj);
-            logger.info("Uploaded '{}/{}' to {}bytes", obj.getBucket(), obj.getName(), obj.getSize());
-            currentUpload = null;
+        if (currentStream != null) {
+            try {
+                currentStream.close();
+            }
+            catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
         }
-
-        callCount = 0;
     }
 
     private StorageObject startUpload(final String path)
@@ -147,7 +163,8 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
 
             return execUploadWithRetry(path, hash);
         }
-        catch (IOException ex) {
+        catch (Exception ex) {
+            cleanChunkFile(storageObjects);
             throw Throwables.propagate(ex);
         }
         finally {
@@ -174,16 +191,39 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
                 {
                     try (final BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(tempFile))) {
                         InputStreamContent mediaContent = new InputStreamContent(contentType, inputStream);
+                        mediaContent.setLength(tempFile.length());
                         mediaContent.setCloseInputStream(true);
 
                         StorageObject objectMetadata = new StorageObject();
                         objectMetadata.setName(path);
-
                         final Storage.Objects.Insert insert = client.objects().insert(bucket, objectMetadata, mediaContent);
                         insert.setDisableGZipContent(true);
-                        StorageObject obj = insert.execute();
+                        insert.getMediaHttpUploader().setDirectUploadEnabled(false);
+                        MediaHttpUploaderProgressListener progressListener = uploader -> {
+                            switch(uploader.getUploadState()) {
+                                case INITIATION_STARTED:
+                                    logger.info("Initiation upload {} started.", path);
+                                    break;
+                                case INITIATION_COMPLETE:
+                                    logger.info("Initiation upload {} completed.", path);
+                                    break;
+                                case MEDIA_IN_PROGRESS:
+                                    logger.info("Uploaded {}: {}%.", path, (int) (uploader.getProgress() * 100));
+                                    break;
+                                case MEDIA_COMPLETE:
+                                    logger.info("Upload {} completed.", path);
+                                    break;
+                                case NOT_STARTED:
+                                    logger.info("Upload not start.");
+                                    break;
+                            }
+                        };
 
+                        insert.getMediaHttpUploader().setProgressListener(progressListener);
+                        StorageObject obj = insert.execute();
+                        storageObjects.add(obj);
                         logger.info(String.format("Local Hash(MD5): %s / Remote Hash(MD5): %s", localHash, obj.getMd5Hash()));
+                        logger.info("Uploaded '{}/{}' total {} bytes", obj.getBucket(), obj.getName(), obj.getSize());
                         return obj;
                     }
                 }
@@ -257,5 +297,41 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     {
         String path = pathPrefix + String.format(sequenceFormat, taskIndex, fileIndex) + pathSuffix;
         return path.replaceFirst("^\\.*/*", "");
+    }
+
+    private StorageObject compose(List<StorageObject> storageObjects, String fileName)
+    {
+        List<ComposeRequest.SourceObjects> sourceObjects = new ArrayList<ComposeRequest.SourceObjects>();
+        for (StorageObject storageObject : storageObjects) {
+            logger.info("Add chunk file {} into compose.", storageObject.getName());
+            sourceObjects.add(new ComposeRequest.SourceObjects().setName(storageObject.getName()));
+        }
+        StorageObject storageObject = new StorageObject();
+        storageObject.setContentType(contentType);
+        ComposeRequest composeReq = new ComposeRequest()
+                .setSourceObjects(sourceObjects)
+                .setDestination(storageObject);
+        try {
+            Storage.Objects.Compose compose = client.objects().compose(bucket, fileName, composeReq);
+            return compose.execute();
+        }
+        catch (IOException e) {
+            logger.warn("Got exception during compose.", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void cleanChunkFile(List<StorageObject> storageObjects)
+    {
+        for (StorageObject storageObject : storageObjects) {
+            try {
+                logger.info("Delete chunk file: {}.", storageObject.getName());
+                Storage.Objects.Delete delete = client.objects().delete(bucket, storageObject.getName());
+                delete.execute();
+            }
+            catch (IOException e) {
+                logger.warn("Got exception during delete chunk file: " + storageObject.getName(), e);
+            }
+        }
     }
 }

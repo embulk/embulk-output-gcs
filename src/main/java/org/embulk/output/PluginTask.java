@@ -5,6 +5,8 @@ import org.embulk.config.ConfigDefault;
 import org.embulk.config.Task;
 import org.embulk.spi.unit.LocalFile;
 
+import javax.validation.constraints.Max;
+import javax.validation.constraints.Min;
 import java.util.Optional;
 
 public interface PluginTask extends Task
@@ -55,4 +57,10 @@ public interface PluginTask extends Task
     @Config("max_connection_retry")
     @ConfigDefault("10") // 10 times retry to connect GCS server if failed.
     int getMaxConnectionRetry();
+
+    @Min(1L * 1024 * 1024 * 1024) // 1G
+    @Max(10L * 1024 * 1024 * 1024) // 10GiB
+    @Config("temp_file_threshold")
+    @ConfigDefault("5368709120") // 5GiB
+    long getTempFileThreshold();
 }
