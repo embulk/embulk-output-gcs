@@ -1,42 +1,69 @@
 plugins {
-    id "com.jfrog.bintray" version "1.1"
-    id "com.github.jruby-gradle.base" version "0.1.5"
     id "java"
     id "checkstyle"
     id "jacoco"
+    id "signing"
+    id "maven-publish"
+    id "org.embulk.embulk-plugins" version "0.4.2"
 }
-import com.github.jrubygradle.JRubyExec
 repositories {
     mavenCentral()
     jcenter()
-}
-configurations {
-    provided
 }
 
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
+group = "org.embulk"
 version = "0.4.5"
+description = "Dumps records to Google Cloud Storage."
 
+def embulkVersion = '0.10.31'
 dependencies {
-    compile  "org.embulk:embulk-core:0.9.11"
-    provided "org.embulk:embulk-core:0.9.11"
+    compileOnly "org.embulk:embulk-api:$embulkVersion"
+    compileOnly "org.embulk:embulk-spi:$embulkVersion"
+    
+    compile('org.embulk:embulk-util-config:0.3.0') {
+        // Conflict with Embulk Core
+        exclude group: 'com.fasterxml.jackson.core', module: 'jackson-annotations'
+        exclude group: 'com.fasterxml.jackson.core', module: 'jackson-core'
+        exclude group: 'com.fasterxml.jackson.core', module: 'jackson-databind'
+        exclude group: 'com.fasterxml.jackson.datatype', module: 'jackson-datatype-jdk8'
+        exclude group: 'javax.validation', module: 'validation-api'
+    }
+    compile('org.embulk:embulk-util-retryhelper:0.8.2')
 
-    compile "com.google.http-client:google-http-client-jackson2:1.19.0"
-    compile ("com.google.apis:google-api-services-storage:v1-rev28-1.19.1") {exclude module: "guava-jdk5"}
+    compile 'com.fasterxml.jackson.core:jackson-core:2.6.7'
+    compile 'com.fasterxml.jackson.core:jackson-annotations:2.6.7'
+    compile 'com.fasterxml.jackson.core:jackson-databind:2.6.7'
+    compile 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.6.7'
 
+    compile 'org.apache.commons:commons-lang3:3.4'
+    compile 'javax.validation:validation-api:1.1.0.Final'
+    compile 'com.google.guava:guava:18.0'
+    
+    //we use version 1.2.0 due to prevent conflict guava and jackson version with embulk
+    compile ("com.google.cloud:google-cloud-storage:1.2.0"){
+        exclude group: 'com.google.cloud', module: 'google-cloud-core'
+        exclude group: 'com.google.cloud', module: 'google-cloud-core-http'
+    }
+    compile ("com.google.cloud:google-cloud-core:1.2.0"){
+        exclude group: 'com.google.guava', module: 'guava'
+    }
+    compile ("com.google.cloud:google-cloud-core-http:1.2.0"){
+        exclude group: 'com.google.guava', module: 'guava'
+        exclude group: 'com.google.cloud', module: 'google-cloud-core'
+    }
     testCompile "junit:junit:4.12"
-    testCompile "org.embulk:embulk-core:0.9.11:tests"
-    testCompile "org.embulk:embulk-standards:0.9.11"
+    testCompile "org.mockito:mockito-core:2.28.2"
+    testCompile "org.embulk:embulk-core:$embulkVersion"
+    testCompile "org.embulk:embulk-core:$embulkVersion:tests"
+    testCompile "org.embulk:embulk-deps:$embulkVersion"
+    testCompile "org.embulk:embulk-junit4:$embulkVersion"
+    testCompile "org.embulk:embulk-formatter-csv:0.10.31"
+    testCompile "org.embulk:embulk-input-file:0.10.31"
+    testCompile "org.embulk:embulk-parser-csv:0.10.31"
 }
-
-task classpath(type: Copy, dependsOn: ["jar"]) {
-    doFirst { file("classpath").deleteDir() }
-    from (configurations.runtime - configurations.provided + files(jar.archivePath))
-    into "classpath"
-}
-clean { delete 'classpath' }
 
 checkstyle {
     configFile = file("${project.rootDir}/config/checkstyle/checkstyle.xml")
@@ -55,33 +82,109 @@ task checkstyle(type: Checkstyle) {
     source = sourceSets.main.allJava + sourceSets.test.allJava
 }
 
-task gem(type: JRubyExec, dependsOn: ["build", "gemspec", "classpath"]) {
-    jrubyArgs "-rrubygems/gem_runner", "-eGem::GemRunner.new.run(ARGV)", "build"
-    script "build/gemspec"
-    doLast { ant.move(file: "${project.name}-${project.version}.gem", todir: "pkg") }
+embulkPlugin {
+    mainClass = "org.embulk.output.GcsOutputPlugin"
+    category = "output"
+    type = "gcs"
 }
 
-task gemspec << { file("build/gemspec").write($/
-Gem::Specification.new do |spec|
-  spec.name          = "${project.name}"
-  spec.version       = "${project.version}"
-  spec.authors       = ["Kazuyuki Honda"]
-  spec.summary       = %[Google Cloud Storage output plugin for Embulk]
-  spec.description   = %["Dumps records to Google Cloud Storage."]
-  spec.email         = ["hakobera@gmail.com"]
-  spec.licenses      = ["MIT"]
-  spec.homepage      = "https://github.com/hakobera/embulk-output-gcs"
-
-  spec.files         = `git ls-files`.split("\n") + Dir["classpath/*.jar"]
-  spec.test_files    = spec.files.grep(%r"^(test|spec)/")
-  spec.require_paths = ["lib"]
-
-  spec.add_development_dependency 'bundler', ['~> 1.0']
-  spec.add_development_dependency 'rake', ['>= 10.0']
-end
-/$)
+tasks.withType(JavaCompile) {
+    options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+    options.encoding = "UTF-8"
 }
 
-task gempush << {
-  "gem push pkg/embulk-output-gcs-${project.version}.gem".execute().waitFor()
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
+
+javadoc {
+    options {
+        locale = 'en_US'
+        encoding = 'UTF-8'
+    }
+}
+
+jar {
+    from rootProject.file("LICENSE")
+}
+
+sourcesJar {
+    from rootProject.file("LICENSE")
+}
+
+javadocJar {
+    from rootProject.file("LICENSE")
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId = project.group
+            artifactId = project.name
+
+            from components.java
+
+            pom {  // https://central.sonatype.org/pages/requirements.html
+                packaging "jar"
+
+                name = project.name
+                description = project.description
+                url = "https://www.embulk.org/"
+
+                licenses {
+                    license {
+                        // http://central.sonatype.org/pages/requirements.html#license-information
+                        name = "MIT License"
+                        url = "http://www.opensource.org/licenses/mit-license.php"
+                    }
+                }
+
+                scm {
+                    connection = "scm:git:git://github.com/embulk/embulk-output-gcs.git"
+                    developerConnection = "scm:git:git@github.com:embulk/embulk-output-gcs.git"
+                    url = "https://github.com/embulk/embulk-output-gcs"
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {  // publishMavenPublicationToMavenCentralRepository
+            name = "mavenCentral"
+            if (project.version.endsWith("-SNAPSHOT")) {
+                url "https://oss.sonatype.org/content/repositories/snapshots"
+            } else {
+                url "https://oss.sonatype.org/service/local/staging/deploy/maven2"
+            }
+
+            credentials {
+                username = project.hasProperty("ossrhUsername") ? ossrhUsername : ""
+                password = project.hasProperty("ossrhPassword") ? ossrhPassword : ""
+            }
+        }
+    }
+}
+
+signing {
+    sign publishing.publications.maven
+}
+
+gem {
+    authors = [ "Kazuyuki Honda" ]
+    email = [ "hakobera@gmail.com" ]
+    summary = "Google Cloud Storage output plugin for Embulk"
+    homepage = "https://github.com/embulk/embulk-output-gcs"
+    licenses = [ "MIT" ]
+}
+
+gemPush {
+    host = "https://rubygems.org"
+}
+
+test {
+    testLogging {
+        outputs.upToDateWhen { false }
+        showStandardStreams = true
+    }
 }

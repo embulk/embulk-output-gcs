@@ -1,31 +1,36 @@
 package org.embulk.output;
 
-import com.google.api.services.storage.Storage;
-import com.google.common.base.Throwables;
+import com.google.cloud.storage.Storage;
+import com.google.common.annotations.VisibleForTesting;
 import org.embulk.config.ConfigDiff;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigSource;
 import org.embulk.config.TaskReport;
 import org.embulk.config.TaskSource;
-import org.embulk.spi.Exec;
 import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.TransactionalFileOutput;
-import org.embulk.spi.unit.LocalFile;
+import org.embulk.util.config.ConfigMapper;
+import org.embulk.util.config.ConfigMapperFactory;
+import org.embulk.util.config.TaskMapper;
+import org.embulk.util.config.units.LocalFile;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Function;
 
 public class GcsOutputPlugin implements FileOutputPlugin
 {
+    public static final ConfigMapperFactory CONFIG_MAPPER_FACTORY = ConfigMapperFactory.builder()
+            .addDefaultModules().build();
+    public static final ConfigMapper CONFIG_MAPPER = CONFIG_MAPPER_FACTORY.createConfigMapper();
+    public static final TaskMapper TASK_MAPPER = CONFIG_MAPPER_FACTORY.createTaskMapper();
     @Override
     public ConfigDiff transaction(ConfigSource config,
                                   int taskCount,
                                   FileOutputPlugin.Control control)
     {
-        PluginTask task = config.loadConfig(PluginTask.class);
+        PluginTask task = CONFIG_MAPPER.map(config, PluginTask.class);
 
         if (task.getP12KeyfilePath().isPresent()) {
             if (task.getP12Keyfile().isPresent()) {
@@ -35,7 +40,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
                 task.setP12Keyfile(Optional.of(LocalFile.of(task.getP12KeyfilePath().get())));
             }
             catch (IOException ex) {
-                throw Throwables.propagate(ex);
+                throw new RuntimeException(ex);
             }
         }
 
@@ -50,7 +55,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
             }
         }
 
-        return resume(task.dump(), taskCount, control);
+        return resume(task.toTaskSource(), taskCount, control);
     }
 
     @Override
@@ -59,7 +64,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
                              FileOutputPlugin.Control control)
     {
         control.run(taskSource);
-        return Exec.newConfigDiff();
+        return CONFIG_MAPPER_FACTORY.newConfigDiff();
     }
 
     @Override
@@ -72,7 +77,7 @@ public class GcsOutputPlugin implements FileOutputPlugin
     @Override
     public TransactionalFileOutput open(TaskSource taskSource, final int taskIndex)
     {
-        PluginTask task = taskSource.loadTask(PluginTask.class);
+        PluginTask task = TASK_MAPPER.map(taskSource, PluginTask.class);
 
         Storage client = createClient(task);
         return new GcsTransactionalFileOutput(task, client, taskIndex);
@@ -81,38 +86,22 @@ public class GcsOutputPlugin implements FileOutputPlugin
     private GcsAuthentication newGcsAuth(PluginTask task)
     {
         try {
-            return new GcsAuthentication(
-                    task.getAuthMethod().getString(),
-                    task.getServiceAccountEmail(),
-                    task.getP12Keyfile().map(localFileToPathString()),
-                    task.getJsonKeyfile().map(localFileToPathString()),
-                    task.getApplicationName()
-            );
+            return new GcsAuthentication(task);
         }
         catch (GeneralSecurityException | IOException ex) {
             throw new ConfigException(ex);
         }
     }
 
-    private Storage createClient(final PluginTask task)
+    @VisibleForTesting
+    public Storage createClient(final PluginTask task)
     {
         try {
             GcsAuthentication auth = newGcsAuth(task);
-            return auth.getGcsClient(task.getBucket(), task.getMaxConnectionRetry());
+            return auth.getGcsClient();
         }
         catch (ConfigException | IOException ex) {
-            throw Throwables.propagate(ex);
+            throw new RuntimeException(ex);
         }
-    }
-
-    private Function<LocalFile, String> localFileToPathString()
-    {
-        return new Function<LocalFile, String>()
-        {
-            public String apply(LocalFile file)
-            {
-                return file.getPath().toString();
-            }
-        };
     }
 }

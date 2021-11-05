@@ -1,12 +1,10 @@
 package org.embulk.output;
 
-import org.embulk.config.Config;
-import org.embulk.config.ConfigDefault;
-import org.embulk.config.Task;
-import org.embulk.spi.unit.LocalFile;
+import org.embulk.util.config.Config;
+import org.embulk.util.config.ConfigDefault;
+import org.embulk.util.config.Task;
+import org.embulk.util.config.units.LocalFile;
 
-import javax.validation.constraints.Max;
-import javax.validation.constraints.Min;
 import java.util.Optional;
 
 public interface PluginTask extends Task
@@ -58,9 +56,19 @@ public interface PluginTask extends Task
     @ConfigDefault("10") // 10 times retry to connect GCS server if failed.
     int getMaxConnectionRetry();
 
-    @Min(1L * 1024 * 1024 * 1024) // 1G
-    @Max(10L * 1024 * 1024 * 1024) // 10GiB
-    @Config("temp_file_threshold")
-    @ConfigDefault("5368709120") // 5GiB
-    long getTempFileThreshold();
+    @Config("initial_retry_interval_millis")
+    @ConfigDefault("500")
+    int getInitialRetryIntervalMillis();
+
+    @Config("maximum_retry_interval_millis")
+    @ConfigDefault("30000")
+    int getMaximumRetryIntervalMillis();
+
+    @Config("store_pass")
+    @ConfigDefault("\"notasecret\"")
+    String getStorePass();
+
+    @Config("key_pass")
+    @ConfigDefault("\"notasecret\"")
+    String getKeyPass();
 }
