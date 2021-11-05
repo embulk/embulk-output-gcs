@@ -26,6 +26,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER;
 import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
@@ -265,23 +266,23 @@ public class TestGcsOutputPlugin
         assertRecords(remotePath, client);
     }
 
-//    @Test
-//    public void testGenerateRemotePath() throws Exception
-//    {
-//        ConfigSource configSource = config();
-//        PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
-//        Storage storage = Mockito.mock(Storage.class);
-//        GcsTransactionalFileOutput fileOutput = new GcsTransactionalFileOutput(task, storage, 0);
-//        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("/sample", task.getSequenceFormat(), 0, 1, ".csv"));
-//        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("./sample", task.getSequenceFormat(), 0, 1, ".csv"));
-//        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("../sample", task.getSequenceFormat(), 0, 1, ".csv"));
-//        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("//sample", task.getSequenceFormat(), 0, 1, ".csv"));
-//        assertEquals("path/to/sample.000.01.csv", fileOutput.generateRemotePath("/path/to/sample", task.getSequenceFormat(), 0, 1, ".csv"));
-//        assertEquals("path/to/./sample.000.01.csv", fileOutput.generateRemotePath("path/to/./sample", task.getSequenceFormat(), 0, 1, ".csv"));
-//        assertEquals("path/to/../sample.000.01.csv", fileOutput.generateRemotePath("path/to/../sample", task.getSequenceFormat(), 0, 1, ".csv"));
-//        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("....../sample", task.getSequenceFormat(), 0, 1, ".csv"));
-//        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("......///sample", task.getSequenceFormat(), 0, 1, ".csv"));
-//    }
+    @Test
+    public void testGenerateRemotePath() throws Exception
+    {
+        ConfigSource configSource = config();
+        PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
+        Storage storage = Mockito.mock(Storage.class);
+        GcsTransactionalFileOutput fileOutput = new GcsTransactionalFileOutput(task, storage, 0);
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("/sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("./sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("../sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("//sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("path/to/sample.000.01.csv", fileOutput.generateRemotePath("/path/to/sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("path/to/./sample.000.01.csv", fileOutput.generateRemotePath("path/to/./sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("path/to/../sample.000.01.csv", fileOutput.generateRemotePath("path/to/../sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("....../sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("......///sample", task.getSequenceFormat(), 0, 1, ".csv"));
+    }
 
     public ConfigSource config()
     {
