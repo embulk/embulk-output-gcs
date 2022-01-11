@@ -11,6 +11,8 @@ Google Cloud Storage output plugin for [Embulk](https://github.com/embulk/embulk
 * **Resume supported**: yes
 * **Cleanup supported**: no
 
+- Connector do not support retry in case we have any problem with streaming chanel. In this case, we need to run the job again.
+
 ## Configuration
 
 - **bucket**: Google Cloud Storage bucket name (string, required)

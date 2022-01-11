@@ -34,6 +34,8 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     private BlobId blobId = null;
     private int fileIndex = 0;
     private WriteChannel writer = null;
+    private long byteCount = 0;
+    private long totalByte = 0;
 
     GcsTransactionalFileOutput(PluginTask task, Storage client, int taskIndex)
     {
@@ -65,6 +67,13 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     {
         try {
             writer.write(ByteBuffer.wrap(buffer.array(), buffer.offset(), buffer.limit()));
+            byteCount = byteCount + buffer.limit();
+            //104857600 = 100MB
+            if (byteCount >= 104857600) {
+                totalByte = totalByte + byteCount;
+                logger.info("Uploaded {} bytes", totalByte);
+                byteCount = 0;
+            }
         }
         catch (Exception ex) {
             //clean up file if exist
@@ -85,6 +94,7 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     @Override
     public void finish()
     {
+        logger.info("Uploaded total {} bytes.", totalByte + byteCount);
         closeCurrentWriter();
         //query blob again to check
         Blob blob = client.get(blobId);
