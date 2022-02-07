@@ -88,15 +88,15 @@ javadoc {
 }
 
 jar {
-    from rootProject.file("LICENSE")
+    from rootProject.file("LICENSE.txt")
 }
 
 sourcesJar {
-    from rootProject.file("LICENSE")
+    from rootProject.file("LICENSE.txt")
 }
 
 javadocJar {
-    from rootProject.file("LICENSE")
+    from rootProject.file("LICENSE.txt")
 }
 
 publishing {
