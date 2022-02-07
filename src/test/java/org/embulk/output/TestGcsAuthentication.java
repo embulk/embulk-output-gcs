@@ -17,6 +17,7 @@ import static org.junit.Assume.assumeNotNull;
 
 import java.nio.file.NoSuchFileException;
 import java.security.InvalidKeyException;
+import java.util.Base64;
 import java.util.Optional;
 
 public class TestGcsAuthentication
@@ -38,8 +39,8 @@ public class TestGcsAuthentication
     public static void initializeConstant()
     {
         GCP_EMAIL = Optional.of(System.getenv("GCP_EMAIL"));
-        GCP_P12_KEYFILE = Optional.of(System.getenv("GCP_P12_KEYFILE"));
         GCP_JSON_KEYFILE = Optional.of(System.getenv("GCP_JSON_KEYFILE"));
+        GCP_P12_KEYFILE = Optional.of(System.getenv("GCP_PRIVATE_KEYFILE"));
         GCP_BUCKET = System.getenv("GCP_BUCKET");
         // skip test cases, if environment variables are not set.
         assumeNotNull(GCP_EMAIL, GCP_P12_KEYFILE, GCP_JSON_KEYFILE, GCP_BUCKET);
@@ -67,6 +68,9 @@ public class TestGcsAuthentication
     public void testGetGcsClientUsingServiceAccountCredentialSuccess() throws Exception
     {
         ConfigSource configSource = config(AuthMethod.private_key);
+        byte[] keyBytes = Base64.getDecoder().decode(GCP_P12_KEYFILE.get());
+        Optional<LocalFile> p12Key = Optional.of(LocalFile.ofContent(keyBytes));
+        configSource.set("p12_keyfile", p12Key);
         PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
         GcsAuthentication auth = new GcsAuthentication(task);
         auth.getGcsClient();
@@ -76,6 +80,9 @@ public class TestGcsAuthentication
     public void testGetGcsClientUsingServiceAccountCredentialThrowConfigException() throws Exception
     {
         ConfigSource configSource = config(AuthMethod.private_key);
+        byte[] keyBytes = Base64.getDecoder().decode(GCP_P12_KEYFILE.get());
+        Optional<LocalFile> p12Key = Optional.of(LocalFile.ofContent(keyBytes));
+        configSource.set("p12_keyfile", p12Key);
         configSource.set("bucket", "non-exists-bucket");
         PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
         GcsAuthentication auth = new GcsAuthentication(task);
@@ -132,6 +139,8 @@ public class TestGcsAuthentication
     public void testGetServiceAccountCredentialFromJsonSuccess() throws Exception
     {
         ConfigSource configSource = config(AuthMethod.json_key);
+        Optional<LocalFile> jsonKeyfile = Optional.of(LocalFile.ofContent(GCP_JSON_KEYFILE.get().getBytes()));
+        configSource.set("json_keyfile", jsonKeyfile);
         PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
         GcsAuthentication auth = new GcsAuthentication(task);
         auth.getGcsClient();
@@ -141,6 +150,8 @@ public class TestGcsAuthentication
     public void testGetServiceAccountCredentialFromJsonThrowConfigException() throws Exception
     {
         ConfigSource configSource = config(AuthMethod.json_key);
+        Optional<LocalFile> jsonKeyfile = Optional.of(LocalFile.ofContent(GCP_JSON_KEYFILE.get().getBytes()));
+        configSource.set("json_keyfile", jsonKeyfile);
         configSource.set("bucket", "non-exists-bucket");
         PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
         GcsAuthentication auth = new GcsAuthentication(task);
@@ -157,8 +168,6 @@ public class TestGcsAuthentication
                 .set("last_path", "")
                 .set("file_ext", ".csv")
                 .set("service_account_email", GCP_EMAIL)
-                .set("p12_keyfile", GCP_P12_KEYFILE)
-                .set("json_keyfile", GCP_JSON_KEYFILE)
                 .set("application_name", GCP_APPLICATION_NAME)
                 .set("max_connection_retry", 3);
 
