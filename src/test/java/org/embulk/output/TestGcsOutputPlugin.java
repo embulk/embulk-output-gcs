@@ -1,46 +1,56 @@
 package org.embulk.output;
 
-import com.google.api.services.storage.Storage;
-import com.google.common.base.Optional;
+import com.google.cloud.storage.Blob;
+import com.google.cloud.storage.BlobId;
+import com.google.cloud.storage.Storage;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 
+import org.embulk.EmbulkSystemProperties;
 import org.embulk.EmbulkTestRuntime;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigSource;
 import org.embulk.config.TaskReport;
 import org.embulk.config.TaskSource;
-import org.embulk.spi.Buffer;
-import org.embulk.spi.Exec;
+import org.embulk.exec.PartialExecutionException;
+import org.embulk.formatter.csv.CsvFormatterPlugin;
+import org.embulk.input.file.LocalFileInputPlugin;
+import org.embulk.parser.csv.CsvParserPlugin;
+import org.embulk.spi.FileInputPlugin;
 import org.embulk.spi.FileOutputPlugin;
-import org.embulk.spi.FileOutputRunner;
-import org.embulk.spi.OutputPlugin;
-import org.embulk.spi.Schema;
-import org.embulk.spi.TransactionalFileOutput;
-import org.embulk.standards.CsvParserPlugin;
-
+import org.embulk.spi.FormatterPlugin;
+import org.embulk.spi.ParserPlugin;
+import org.embulk.test.TestingEmbulk;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
+import org.mockito.Mockito;
+
+import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER;
+import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeNotNull;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import java.nio.channels.Channels;
+import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.Properties;
 
 public class TestGcsOutputPlugin
 {
+    private static final EmbulkSystemProperties EMBULK_SYSTEM_PROPERTIES;
     private static Optional<String> GCP_EMAIL;
     private static Optional<String> GCP_P12_KEYFILE;
     private static Optional<String> GCP_JSON_KEYFILE;
@@ -49,7 +59,12 @@ public class TestGcsOutputPlugin
     private static String GCP_PATH_PREFIX;
     private static String LOCAL_PATH_PREFIX;
     private static String GCP_APPLICATION_NAME;
-    private FileOutputRunner runner;
+
+    static {
+        final Properties properties = new Properties();
+        properties.setProperty("default_guess_plugins", "gzip,bzip2,json,csv");
+        EMBULK_SYSTEM_PROPERTIES = EmbulkSystemProperties.of(properties);
+    }
 
     /*
      * This test case requires environment variables
@@ -75,6 +90,15 @@ public class TestGcsOutputPlugin
     }
 
     @Rule
+    public TestingEmbulk embulk = TestingEmbulk.builder()
+            .setEmbulkSystemProperties(EMBULK_SYSTEM_PROPERTIES)
+            .registerPlugin(FormatterPlugin.class, "csv", CsvFormatterPlugin.class)
+            .registerPlugin(FileInputPlugin.class, "file", LocalFileInputPlugin.class)
+            .registerPlugin(FileOutputPlugin.class, "gcs", GcsOutputPlugin.class)
+            .registerPlugin(ParserPlugin.class, "csv", CsvParserPlugin.class)
+            .build();
+
+    @Rule
     public EmbulkTestRuntime runtime = new EmbulkTestRuntime();
     private GcsOutputPlugin plugin;
 
@@ -82,32 +106,27 @@ public class TestGcsOutputPlugin
     public void createResources() throws GeneralSecurityException, NoSuchMethodException, IOException
     {
         plugin = new GcsOutputPlugin();
-        runner = new FileOutputRunner(runtime.getInstance(GcsOutputPlugin.class));
     }
 
     @Test
     public void checkDefaultValues()
     {
-        ConfigSource config = Exec.newConfigSource()
-                .set("in", inputConfig())
-                .set("parser", parserConfig(schemaConfig()))
+        ConfigSource config = CONFIG_MAPPER_FACTORY.newConfigSource()
                 .set("type", "gcs")
                 .set("bucket", GCP_BUCKET)
                 .set("path_prefix", "my-prefix")
                 .set("file_ext", ".csv")
                 .set("formatter", formatterConfig());
 
-        PluginTask task = config.loadConfig(PluginTask.class);
+        PluginTask task = CONFIG_MAPPER.map(config, PluginTask.class);
         assertEquals("private_key", task.getAuthMethod().toString());
     }
 
     // p12_keyfile is null when auth_method is private_key
-    @Test(expected = ConfigException.class)
-    public void checkDefaultValuesP12keyNull()
+    @Test
+    public void checkDefaultValuesP12keyNull() throws IOException
     {
-        ConfigSource config = Exec.newConfigSource()
-                .set("in", inputConfig())
-                .set("parser", parserConfig(schemaConfig()))
+        ConfigSource config = CONFIG_MAPPER_FACTORY.newConfigSource()
                 .set("type", "gcs")
                 .set("bucket", GCP_BUCKET)
                 .set("path_prefix", "my-prefix")
@@ -117,18 +136,21 @@ public class TestGcsOutputPlugin
                 .set("p12_keyfile", null)
                 .set("formatter", formatterConfig());
 
-        Schema schema = config.getNested("parser").loadConfig(CsvParserPlugin.PluginTask.class).getSchemaConfig().toSchema();
-
-        runner.transaction(config, schema, 0, new Control());
+        try {
+            embulk.runOutput(config, Paths.get(LOCAL_PATH_PREFIX));
+            fail("Expected Exception was not thrown.");
+        }
+        catch (PartialExecutionException ex) {
+            assertTrue(ex.getCause() instanceof ConfigException);
+            assertEquals("If auth_method is private_key, you have to set both service_account_email and p12_keyfile", ex.getCause().getMessage());
+        }
     }
 
     // both p12_keyfile and p12_keyfile_path set
-    @Test(expected = ConfigException.class)
-    public void checkDefaultValuesConflictSetting()
+    @Test
+    public void checkDefaultValuesConflictSetting() throws IOException
     {
-        ConfigSource config = Exec.newConfigSource()
-                .set("in", inputConfig())
-                .set("parser", parserConfig(schemaConfig()))
+        ConfigSource config = CONFIG_MAPPER_FACTORY.newConfigSource()
                 .set("type", "gcs")
                 .set("bucket", GCP_BUCKET)
                 .set("path_prefix", "my-prefix")
@@ -139,18 +161,21 @@ public class TestGcsOutputPlugin
                 .set("p12_keyfile_path", GCP_P12_KEYFILE)
                 .set("formatter", formatterConfig());
 
-        Schema schema = config.getNested("parser").loadConfig(CsvParserPlugin.PluginTask.class).getSchemaConfig().toSchema();
-
-        runner.transaction(config, schema, 0, new Control());
+        try {
+            embulk.runOutput(config, Paths.get(LOCAL_PATH_PREFIX));
+            fail("Expected Exception was not thrown.");
+        }
+        catch (final PartialExecutionException ex) {
+            assertTrue(ex.getCause() instanceof ConfigException);
+            assertEquals("Setting both p12_keyfile_path and p12_keyfile is invalid", ex.getCause().getMessage());
+        }
     }
 
     // invalid p12keyfile when auth_method is private_key
-    @Test(expected = ConfigException.class)
-    public void checkDefaultValuesInvalidPrivateKey()
+    @Test
+    public void checkDefaultValuesInvalidPrivateKey() throws IOException
     {
-        ConfigSource config = Exec.newConfigSource()
-                .set("in", inputConfig())
-                .set("parser", parserConfig(schemaConfig()))
+        ConfigSource config = CONFIG_MAPPER_FACTORY.newConfigSource()
                 .set("type", "gcs")
                 .set("bucket", GCP_BUCKET)
                 .set("path_prefix", "my-prefix")
@@ -159,19 +184,20 @@ public class TestGcsOutputPlugin
                 .set("service_account_email", GCP_EMAIL)
                 .set("p12_keyfile", "invalid-key.p12")
                 .set("formatter", formatterConfig());
-
-        Schema schema = config.getNested("parser").loadConfig(CsvParserPlugin.PluginTask.class).getSchemaConfig().toSchema();
-
-        runner.transaction(config, schema, 0, new Control());
+        try {
+            embulk.runOutput(config, Paths.get(LOCAL_PATH_PREFIX));
+            fail("Expected Exception was not thrown.");
+        }
+        catch (final PartialExecutionException ex) {
+            assertTrue(ex.getCause() instanceof ConfigException);
+        }
     }
 
     // json_keyfile is null when auth_method is json_key
-    @Test(expected = ConfigException.class)
-    public void checkDefaultValuesJsonKeyfileNull()
+    @Test
+    public void checkDefaultValuesJsonKeyfileNull() throws IOException
     {
-        ConfigSource config = Exec.newConfigSource()
-                .set("in", inputConfig())
-                .set("parser", parserConfig(schemaConfig()))
+        ConfigSource config = CONFIG_MAPPER_FACTORY.newConfigSource()
                 .set("type", "gcs")
                 .set("bucket", GCP_BUCKET)
                 .set("path_prefix", "my-prefix")
@@ -181,34 +207,28 @@ public class TestGcsOutputPlugin
                 .set("json_keyfile", null)
                 .set("formatter", formatterConfig());
 
-        Schema schema = config.getNested("parser").loadConfig(CsvParserPlugin.PluginTask.class).getSchemaConfig().toSchema();
-
-        runner.transaction(config, schema, 0, new Control());
+        try {
+            embulk.runOutput(config, Paths.get(LOCAL_PATH_PREFIX));
+            fail("Expected Exception was not thrown.");
+        }
+        catch (final PartialExecutionException ex) {
+            assertTrue(ex.getCause() instanceof ConfigException);
+        }
     }
 
     @Test
     public void testGcsClientCreateSuccessfully()
-            throws GeneralSecurityException, IOException, NoSuchMethodException,
-            IllegalAccessException, InvocationTargetException
     {
         ConfigSource configSource = config();
-        PluginTask task = configSource.loadConfig(PluginTask.class);
-        Schema schema = configSource.getNested("parser").loadConfig(CsvParserPlugin.PluginTask.class).getSchemaConfig().toSchema();
-        runner.transaction(configSource, schema, 0, new Control());
-
-        Method method = GcsOutputPlugin.class.getDeclaredMethod("createClient", PluginTask.class);
-        method.setAccessible(true);
-        method.invoke(plugin, task); // no errors happens
+        PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
+        plugin.transaction(configSource, 1, new FileOutputControl()); // no errors happens
+        plugin.createClient(task); // no errors happens
     }
 
-    @Test(expected = ConfigException.class)
+    @Test
     public void testGcsClientCreateThrowConfigException()
-            throws GeneralSecurityException, IOException, NoSuchMethodException,
-            IllegalAccessException, InvocationTargetException
     {
-        ConfigSource config = Exec.newConfigSource()
-                .set("in", inputConfig())
-                .set("parser", parserConfig(schemaConfig()))
+        ConfigSource config = CONFIG_MAPPER_FACTORY.newConfigSource()
                 .set("type", "gcs")
                 .set("bucket", "non-exists-bucket")
                 .set("path_prefix", "my-prefix")
@@ -218,89 +238,55 @@ public class TestGcsOutputPlugin
                 .set("json_keyfile", GCP_JSON_KEYFILE)
                 .set("formatter", formatterConfig());
 
-        PluginTask task = config.loadConfig(PluginTask.class);
-
-        Schema schema = config.getNested("parser").loadConfig(CsvParserPlugin.PluginTask.class).getSchemaConfig().toSchema();
-        runner.transaction(config, schema, 0, new Control());
-
-        Method method = GcsOutputPlugin.class.getDeclaredMethod("createClient", PluginTask.class);
-        method.setAccessible(true);
+        plugin.transaction(config, 1, new FileOutputControl()); // no errors happens
+        PluginTask task = CONFIG_MAPPER.map(config, PluginTask.class);
         try {
-            method.invoke(plugin, task);
+            plugin.createClient(task);
+            fail("Expected Exception was not thrown.");
         }
-        catch (InvocationTargetException ex) {
-            throw (ConfigException) ex.getCause();
+        catch (Exception ex) {
+            assertTrue(ex.getCause() instanceof ConfigException);
         }
-    }
-
-    @Test
-    public void testResume()
-    {
-        PluginTask task = config().loadConfig(PluginTask.class);
-        plugin.resume(task.dump(), 0, new FileOutputPlugin.Control()  // no errors happens
-        {
-            @Override
-            public List<TaskReport> run(TaskSource taskSource)
-            {
-                return Lists.newArrayList(Exec.newTaskReport());
-            }
-        });
-    }
-
-    @Test
-    public void testCleanup()
-    {
-        PluginTask task = config().loadConfig(PluginTask.class);
-        plugin.cleanup(task.dump(), 0, Lists.<TaskReport>newArrayList()); // no errors happens
     }
 
     @Test
     public void testGcsFileOutputByOpen() throws Exception
     {
         ConfigSource configSource = config();
-        PluginTask task = configSource.loadConfig(PluginTask.class);
-        Schema schema = configSource.getNested("parser").loadConfig(CsvParserPlugin.PluginTask.class).getSchemaConfig().toSchema();
-        runner.transaction(configSource, schema, 0, new Control());
+        PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
+        Storage client = plugin.createClient(task);
+        try {
+            embulk.runOutput(configSource, Paths.get(LOCAL_PATH_PREFIX));
+        }
+        catch (Exception ex) {
+            fail(ex.getMessage());
+        }
 
-        TransactionalFileOutput output = plugin.open(task.dump(), 0);
-
-        output.nextFile();
-
-        FileInputStream is = new FileInputStream(LOCAL_PATH_PREFIX);
-        byte[] bytes = convertInputStreamToByte(is);
-        Buffer buffer = Buffer.wrap(bytes);
-        output.add(buffer);
-
-        output.finish();
-        output.commit();
-
-        String remotePath = GCP_PATH_PREFIX + String.format(task.getSequenceFormat(), 0, 1) + task.getFileNameExtension();
-        assertRecords(remotePath);
+        String remotePath = GCP_PATH_PREFIX + String.format(task.getSequenceFormat(), 0, 0) + task.getFileNameExtension();
+        assertRecords(remotePath, client);
     }
 
     @Test
     public void testGenerateRemotePath() throws Exception
     {
         ConfigSource configSource = config();
-        PluginTask task = configSource.loadConfig(PluginTask.class);
-        Method method = GcsTransactionalFileOutput.class.getDeclaredMethod("generateRemotePath", String.class, String.class, int.class, int.class, String.class);
-        method.setAccessible(true);
-        assertEquals("sample.000.01.csv", method.invoke(plugin, "/sample", task.getSequenceFormat(), 0, 1, ".csv"));
-        assertEquals("sample.000.01.csv", method.invoke(plugin, "./sample", task.getSequenceFormat(), 0, 1, ".csv"));
-        assertEquals("sample.000.01.csv", method.invoke(plugin, "../sample", task.getSequenceFormat(), 0, 1, ".csv"));
-        assertEquals("sample.000.01.csv", method.invoke(plugin, "//sample", task.getSequenceFormat(), 0, 1, ".csv"));
-        assertEquals("path/to/sample.000.01.csv", method.invoke(plugin, "/path/to/sample", task.getSequenceFormat(), 0, 1, ".csv"));
-        assertEquals("path/to/./sample.000.01.csv", method.invoke(plugin, "path/to/./sample", task.getSequenceFormat(), 0, 1, ".csv"));
-        assertEquals("path/to/../sample.000.01.csv", method.invoke(plugin, "path/to/../sample", task.getSequenceFormat(), 0, 1, ".csv"));
-        assertEquals("sample.000.01.csv", method.invoke(plugin, "....../sample", task.getSequenceFormat(), 0, 1, ".csv"));
-        assertEquals("sample.000.01.csv", method.invoke(plugin, "......///sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
+        Storage storage = Mockito.mock(Storage.class);
+        GcsTransactionalFileOutput fileOutput = new GcsTransactionalFileOutput(task, storage, 0);
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("/sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("./sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("../sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("//sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("path/to/sample.000.01.csv", fileOutput.generateRemotePath("/path/to/sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("path/to/./sample.000.01.csv", fileOutput.generateRemotePath("path/to/./sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("path/to/../sample.000.01.csv", fileOutput.generateRemotePath("path/to/../sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("....../sample", task.getSequenceFormat(), 0, 1, ".csv"));
+        assertEquals("sample.000.01.csv", fileOutput.generateRemotePath("......///sample", task.getSequenceFormat(), 0, 1, ".csv"));
     }
 
     public ConfigSource config()
     {
-        return Exec.newConfigSource()
-                .set("in", inputConfig())
-                .set("parser", parserConfig(schemaConfig()))
+        return CONFIG_MAPPER_FACTORY.newConfigSource()
                 .set("type", "gcs")
                 .set("bucket", GCP_BUCKET)
                 .set("path_prefix", GCP_PATH_PREFIX)
@@ -314,50 +300,13 @@ public class TestGcsOutputPlugin
                 .set("formatter", formatterConfig());
     }
 
-    private class Control
-            implements OutputPlugin.Control
+    private class FileOutputControl implements FileOutputPlugin.Control
     {
         @Override
         public List<TaskReport> run(TaskSource taskSource)
         {
-            return Lists.newArrayList(Exec.newTaskReport());
+            return Lists.newArrayList(CONFIG_MAPPER_FACTORY.newTaskReport());
         }
-    }
-
-    private ImmutableMap<String, Object> inputConfig()
-    {
-        ImmutableMap.Builder<String, Object> builder = new ImmutableMap.Builder<>();
-        builder.put("type", "file");
-        builder.put("path_prefix", LOCAL_PATH_PREFIX);
-        builder.put("last_path", "");
-        return builder.build();
-    }
-
-    private ImmutableMap<String, Object> parserConfig(ImmutableList<Object> schemaConfig)
-    {
-        ImmutableMap.Builder<String, Object> builder = new ImmutableMap.Builder<>();
-        builder.put("type", "csv");
-        builder.put("newline", "CRLF");
-        builder.put("delimiter", ",");
-        builder.put("quote", "\"");
-        builder.put("escape", "\"");
-        builder.put("trim_if_not_quoted", false);
-        builder.put("skip_header_lines", 1);
-        builder.put("allow_extra_columns", false);
-        builder.put("allow_optional_columns", false);
-        builder.put("columns", schemaConfig);
-        return builder.build();
-    }
-
-    private ImmutableList<Object> schemaConfig()
-    {
-        ImmutableList.Builder<Object> builder = new ImmutableList.Builder<>();
-        builder.add(ImmutableMap.of("name", "id", "type", "long"));
-        builder.add(ImmutableMap.of("name", "account", "type", "long"));
-        builder.add(ImmutableMap.of("name", "time", "type", "timestamp", "format", "%Y-%m-%d %H:%M:%S"));
-        builder.add(ImmutableMap.of("name", "purchase", "type", "timestamp", "format", "%Y%m%d"));
-        builder.add(ImmutableMap.of("name", "comment", "type", "string"));
-        return builder.build();
     }
 
     private ImmutableMap<String, Object> formatterConfig()
@@ -369,48 +318,46 @@ public class TestGcsOutputPlugin
         return builder.build();
     }
 
-    private void assertRecords(String gcsPath) throws Exception
+    private void assertRecords(String gcsPath, Storage client) throws Exception
     {
-        ImmutableList<List<String>> records = getFileContentsFromGcs(gcsPath);
-        assertEquals(5, records.size());
+        ImmutableList<List<String>> records = getFileContentsFromGcs(gcsPath, client);
+        assertEquals(4, records.size());
         {
-            List<String> record = records.get(1);
+            List<String> record = records.get(0);
             assertEquals("1", record.get(0));
             assertEquals("32864", record.get(1));
-            assertEquals("2015-01-27 19:23:49", record.get(2));
-            assertEquals("20150127", record.get(3));
-            assertEquals("embulk", record.get(4));
+        }
+
+        {
+            List<String> record = records.get(1);
+            assertEquals("2", record.get(0));
+            assertEquals("14824", record.get(1));
         }
 
         {
             List<String> record = records.get(2);
-            assertEquals("2", record.get(0));
-            assertEquals("14824", record.get(1));
-            assertEquals("2015-01-27 19:01:23", record.get(2));
-            assertEquals("20150127", record.get(3));
-            assertEquals("embulk jruby", record.get(4));
+            assertEquals("3", record.get(0));
+            assertEquals("27559", record.get(1));
+        }
+
+        {
+            List<String> record = records.get(3);
+            assertEquals("4", record.get(0));
+            assertEquals("11270", record.get(1));
         }
     }
 
-    private ImmutableList<List<String>> getFileContentsFromGcs(String path) throws Exception
+    private ImmutableList<List<String>> getFileContentsFromGcs(String path, Storage client) throws Exception
     {
         ConfigSource config = config();
-
-        PluginTask task = config.loadConfig(PluginTask.class);
-
-        Method method = GcsOutputPlugin.class.getDeclaredMethod("createClient", PluginTask.class);
-        method.setAccessible(true);
-        Storage client = (Storage) method.invoke(plugin, task);
-        Storage.Objects.Get getObject = client.objects().get(GCP_BUCKET, path);
-
+        Blob blob = client.get(BlobId.of(GCP_BUCKET, path));
+        InputStream is = Channels.newInputStream(blob.reader());
         ImmutableList.Builder<List<String>> builder = new ImmutableList.Builder<>();
 
-        InputStream is =  getObject.executeMediaAsInputStream();
         BufferedReader reader = new BufferedReader(new InputStreamReader(is));
         String line;
         while ((line = reader.readLine()) != null) {
             List<String> records = Arrays.asList(line.split(",", 0));
-
             builder.add(records);
         }
         return builder.build();

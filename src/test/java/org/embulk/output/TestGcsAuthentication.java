@@ -1,22 +1,22 @@
 package org.embulk.output;
 
-import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
-import com.google.api.services.storage.Storage;
-
+import com.google.common.base.Throwables;
 import org.embulk.EmbulkTestRuntime;
-
 import org.embulk.config.ConfigException;
+import org.embulk.config.ConfigSource;
+import org.embulk.util.config.units.LocalFile;
+import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
-import static org.junit.Assert.assertEquals;
+
+import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER;
+import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
+import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeNotNull;
 
-import java.io.FileNotFoundException;
-
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.security.GeneralSecurityException;
+import java.nio.file.NoSuchFileException;
+import java.security.InvalidKeyException;
 import java.util.Optional;
 
 public class TestGcsAuthentication
@@ -49,127 +49,128 @@ public class TestGcsAuthentication
     public EmbulkTestRuntime runtime = new EmbulkTestRuntime();
 
     @Test
-    public void testGetServiceAccountCredentialSuccess()
-            throws NoSuchFieldException, IllegalAccessException, GeneralSecurityException, IOException
-    {
-        GcsAuthentication auth = new GcsAuthentication(
-                "private_key",
-                GCP_EMAIL,
-                GCP_P12_KEYFILE,
-                null,
-                GCP_APPLICATION_NAME
-        );
-
-        Field field = GcsAuthentication.class.getDeclaredField("credentials");
-        field.setAccessible(true);
-
-        assertEquals(GoogleCredential.class, field.get(auth).getClass());
-    }
-
-    @Test(expected = FileNotFoundException.class)
     public void testGetServiceAccountCredentialThrowFileNotFoundException()
-            throws GeneralSecurityException, IOException
     {
         Optional<String> notFoundP12Keyfile = Optional.of("/path/to/notfound.p12");
-        GcsAuthentication auth = new GcsAuthentication(
-                "private_key",
-                GCP_EMAIL,
-                notFoundP12Keyfile,
-                null,
-                GCP_APPLICATION_NAME
-        );
+        ConfigSource configSource = config(AuthMethod.private_key);
+        configSource.set("p12_keyfile", notFoundP12Keyfile);
+        try {
+            CONFIG_MAPPER.map(configSource, PluginTask.class);
+            fail();
+        }
+        catch (Exception ex) {
+            Assert.assertTrue(Throwables.getRootCause(ex) instanceof NoSuchFileException);
+        }
     }
 
     @Test
     public void testGetGcsClientUsingServiceAccountCredentialSuccess() throws Exception
     {
-        GcsAuthentication auth = new GcsAuthentication(
-                "private_key",
-                GCP_EMAIL,
-                GCP_P12_KEYFILE,
-                null,
-                GCP_APPLICATION_NAME
-        );
-
-        Storage client = auth.getGcsClient(GCP_BUCKET, 3);
-
-        assertEquals(Storage.class, client.getClass());
+        ConfigSource configSource = config(AuthMethod.private_key);
+        PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
+        GcsAuthentication auth = new GcsAuthentication(task);
+        auth.getGcsClient();
     }
 
     @Test(expected = ConfigException.class)
     public void testGetGcsClientUsingServiceAccountCredentialThrowConfigException() throws Exception
     {
-        GcsAuthentication auth = new GcsAuthentication(
-                "private_key",
-                GCP_EMAIL,
-                GCP_P12_KEYFILE,
-                null,
-                GCP_APPLICATION_NAME
-        );
-
-        Storage client = auth.getGcsClient("non-exists-bucket", 3);
-
-        assertEquals(Storage.class, client.getClass());
+        ConfigSource configSource = config(AuthMethod.private_key);
+        configSource.set("bucket", "non-exists-bucket");
+        PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
+        GcsAuthentication auth = new GcsAuthentication(task);
+        auth.getGcsClient();
+        fail();
     }
 
     @Test
-    public void testGetServiceAccountCredentialFromJsonFileSuccess()
-            throws NoSuchFieldException, IllegalAccessException, GeneralSecurityException, IOException
-    {
-        GcsAuthentication auth = new GcsAuthentication(
-                "json_key",
-                GCP_EMAIL,
-                null,
-                GCP_JSON_KEYFILE,
-                GCP_APPLICATION_NAME
-        );
-        Field field = GcsAuthentication.class.getDeclaredField("credentials");
-        field.setAccessible(true);
-
-        assertEquals(GoogleCredential.class, field.get(auth).getClass());
-    }
-
-    @Test(expected = FileNotFoundException.class)
     public void testGetServiceAccountCredentialFromJsonThrowFileFileNotFoundException()
-            throws GeneralSecurityException, IOException
     {
         Optional<String> notFoundJsonKeyfile = Optional.of("/path/to/notfound.json");
-        GcsAuthentication auth = new GcsAuthentication(
-                "json_key",
-                GCP_EMAIL,
-                null,
-                notFoundJsonKeyfile,
-                GCP_APPLICATION_NAME
-        );
+        ConfigSource configSource = config(AuthMethod.json_key);
+        configSource.set("json_keyfile", notFoundJsonKeyfile);
+        try {
+            CONFIG_MAPPER.map(configSource, PluginTask.class);
+            fail();
+        }
+        catch (Exception ex) {
+            Assert.assertTrue(Throwables.getRootCause(ex) instanceof NoSuchFileException);
+        }
+    }
+
+    @Test
+    public void testGetServiceAccountCredentialFromInvalidJsonKey()
+    {
+        String jsonKey = "{\n" +
+                "\"type\": \"service_account\",\n" +
+                "\"project_id\": \"test\",\n" +
+                "\"private_key_id\": \"private_key_id\",\n" +
+                "\"private_key\": \"-----BEGIN PRIVATE KEY-----\\nInvalidKey\\n-----END PRIVATE KEY-----\\n\",\n" +
+                "\"client_email\": \"test@test.iam.gserviceaccount.com\",\n" +
+                "\"client_id\": \"433252345345\",\n" +
+                "\"auth_uri\": \"https://accounts.google.com/o/oauth2/auth\",\n" +
+                " \"token_uri\": \"https://oauth2.googleapis.com/token\",\n" +
+                "\"auth_provider_x509_cert_url\": \"https://www.googleapis.com/oauth2/v1/certs\",\n" +
+                "\"client_x509_cert_url\": \"https://www.googleapis.com/robot/v1/metadata/x509/test.iam.gserviceaccount.com\"\n" +
+                "}";
+
+        Optional<LocalFile> invalidJsonKeyfile = Optional.of(LocalFile.ofContent(jsonKey.getBytes()));
+        ConfigSource configSource = config(AuthMethod.json_key);
+        configSource.set("json_keyfile", invalidJsonKeyfile);
+        try {
+            PluginTask task =  CONFIG_MAPPER.map(configSource, PluginTask.class);
+            GcsAuthentication auth = new GcsAuthentication(task);
+            auth.getGcsClient();
+            fail();
+        }
+        catch (Exception ex) {
+            Assert.assertTrue(Throwables.getRootCause(ex) instanceof InvalidKeyException);
+        }
     }
 
     @Test
     public void testGetServiceAccountCredentialFromJsonSuccess() throws Exception
     {
-        GcsAuthentication auth = new GcsAuthentication(
-                "json_key",
-                GCP_EMAIL,
-                null,
-                GCP_JSON_KEYFILE,
-                GCP_APPLICATION_NAME
-        );
-
-        Storage client = auth.getGcsClient(GCP_BUCKET, 3);
-
-        assertEquals(Storage.class, client.getClass());
+        ConfigSource configSource = config(AuthMethod.json_key);
+        PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
+        GcsAuthentication auth = new GcsAuthentication(task);
+        auth.getGcsClient();
     }
 
     @Test(expected = ConfigException.class)
     public void testGetServiceAccountCredentialFromJsonThrowConfigException() throws Exception
     {
-        GcsAuthentication auth = new GcsAuthentication(
-                "json_key",
-                GCP_EMAIL,
-                null,
-                GCP_JSON_KEYFILE,
-                GCP_APPLICATION_NAME
-        );
+        ConfigSource configSource = config(AuthMethod.json_key);
+        configSource.set("bucket", "non-exists-bucket");
+        PluginTask task = CONFIG_MAPPER.map(configSource, PluginTask.class);
+        GcsAuthentication auth = new GcsAuthentication(task);
+        auth.getGcsClient();
+        fail();
+    }
 
-        Storage client = auth.getGcsClient("non-exists-bucket", 3);
+    public ConfigSource config(AuthMethod authMethod)
+    {
+        ConfigSource config = CONFIG_MAPPER_FACTORY.newConfigSource()
+                .set("type", "gcs")
+                .set("bucket", GCP_BUCKET)
+                .set("path_prefix", "")
+                .set("last_path", "")
+                .set("file_ext", ".csv")
+                .set("service_account_email", GCP_EMAIL)
+                .set("p12_keyfile", GCP_P12_KEYFILE)
+                .set("json_keyfile", GCP_JSON_KEYFILE)
+                .set("application_name", GCP_APPLICATION_NAME)
+                .set("max_connection_retry", 3);
+
+        if (authMethod == AuthMethod.private_key) {
+            config.set("auth_method", "private_key");
+        }
+        else if (authMethod == AuthMethod.json_key) {
+            config.set("auth_method", "json_key");
+        }
+        else {
+            config.set("auth_method", "compute_engine");
+        }
+        return config;
     }
 }
