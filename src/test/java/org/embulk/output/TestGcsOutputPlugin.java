@@ -22,6 +22,7 @@ import org.embulk.spi.FileOutputPlugin;
 import org.embulk.spi.FormatterPlugin;
 import org.embulk.spi.ParserPlugin;
 import org.embulk.test.TestingEmbulk;
+import org.embulk.util.config.units.LocalFile;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Rule;
@@ -44,6 +45,7 @@ import java.nio.channels.Channels;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
@@ -77,7 +79,7 @@ public class TestGcsOutputPlugin
     public static void initializeConstant()
     {
         GCP_EMAIL = Optional.of(System.getenv("GCP_EMAIL"));
-        GCP_P12_KEYFILE = Optional.of(System.getenv("GCP_P12_KEYFILE"));
+        GCP_P12_KEYFILE = Optional.of(System.getenv("GCP_PRIVATE_KEYFILE"));
         GCP_JSON_KEYFILE = Optional.of(System.getenv("GCP_JSON_KEYFILE"));
         GCP_BUCKET = System.getenv("GCP_BUCKET");
         // skip test cases, if environment variables are not set.
@@ -157,10 +159,10 @@ public class TestGcsOutputPlugin
                 .set("file_ext", ".csv")
                 .set("auth_method", "private_key")
                 .set("service_account_email", GCP_EMAIL)
-                .set("p12_keyfile", GCP_P12_KEYFILE)
-                .set("p12_keyfile_path", GCP_P12_KEYFILE)
                 .set("formatter", formatterConfig());
 
+        config.set("p12_keyfile", Optional.of(LocalFile.ofContent("dummy".getBytes())));
+        config.set("p12_keyfile_path", Optional.of("dummy_path"));
         try {
             embulk.runOutput(config, Paths.get(LOCAL_PATH_PREFIX));
             fail("Expected Exception was not thrown.");
@@ -235,7 +237,7 @@ public class TestGcsOutputPlugin
                 .set("file_ext", ".csv")
                 .set("auth_method", "json_key")
                 .set("service_account_email", GCP_EMAIL)
-                .set("json_keyfile", GCP_JSON_KEYFILE)
+                .set("json_keyfile", Optional.of(LocalFile.ofContent(GCP_JSON_KEYFILE.get().getBytes())))
                 .set("formatter", formatterConfig());
 
         plugin.transaction(config, 1, new FileOutputControl()); // no errors happens
@@ -286,16 +288,20 @@ public class TestGcsOutputPlugin
 
     public ConfigSource config()
     {
+        byte[] keyBytes = Base64.getDecoder().decode(GCP_P12_KEYFILE.get());
+        Optional<LocalFile> p12Key = Optional.of(LocalFile.ofContent(keyBytes));
+        Optional<LocalFile> jsonKey = Optional.of(LocalFile.ofContent(GCP_JSON_KEYFILE.get().getBytes()));
+
         return CONFIG_MAPPER_FACTORY.newConfigSource()
                 .set("type", "gcs")
                 .set("bucket", GCP_BUCKET)
                 .set("path_prefix", GCP_PATH_PREFIX)
                 .set("last_path", "")
                 .set("file_ext", ".csv")
-                .set("auth_method", "private_key")
+                .set("auth_method", "json_key")
                 .set("service_account_email", GCP_EMAIL)
-                .set("p12_keyfile", GCP_P12_KEYFILE)
-                .set("json_keyfile", GCP_JSON_KEYFILE)
+                .set("p12_keyfile", p12Key)
+                .set("json_keyfile", jsonKey)
                 .set("application_name", GCP_APPLICATION_NAME)
                 .set("formatter", formatterConfig());
     }
