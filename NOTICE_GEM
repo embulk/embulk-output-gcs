@@ -1,0 +1,66 @@
+embulk-output-gcs
+Copyright 2015 Kazuyuki Honda, and the Embulk project
+
+This product includes software developed by Kazuyuki Honda, and in a part of the Embulk project (https://www.embulk.org/).
+It was originally developed by Kazuyuki Honda (https://github.com/hakobera), and then transferred to the Embulk project.
+It was originally licenced under the MIT License before the transfer, and it is now licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes software developed in a part of the Embulk project (https://www.embulk.org/).
+It has been licenced under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes JARs of the Jackson project (https://github.com/FasterXML/jackson), as-is.
+They are licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes JARs of the Jakarta Bean Validation API 1.1 (https://beanvalidation.org/1.1/), as-is.
+It is licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes JAR of the JSR305 Annotations for Findbugs (https://code.google.com/archive/p/jsr-305/), as-is.
+It is licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes JARs of Apache HttpClient, HttpCore, and Commons Codec, as-is.
+They are licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes a JAR of Joda-Time (https://www.joda.org/joda-time/), as-is.
+It is licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes a JAR of the JCL 1.2 implemented over SLF4J (http://www.slf4j.org/legacy.html) 1.7, as-is.
+It is licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes a JAR of the ThreeTen Backport (https://www.threeten.org/threetenbp/), as-is.
+It is licensed under the 3-Clause "New" BSD License.
+
+The gem distribution of this product includes JAR of Guava (https://guava.dev/), as-is.
+It is licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes JAR of GSON (https://github.com/google/gson), as-is.
+It is licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes JARs of Protocol Buffers (https://developers.google.com/protocol-buffers), as-is.
+They are licensed under the 3-Clause "New" BSD License.
+
+The gem distribution of this product includes a JAR of AutoValue Processor, as-is.
+It is licensed under the Apache License, Version 2.0.
+
+The gem distribution of this product includes JARs of Google Cloud Clients (https://github.com/GoogleCloudPlatform/google-cloud-java/), as-is.
+They are licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes JARs of Google APIs/HTTP/OAuth Client Libraries, as-is.
+They are licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes a JAR of GAX (Google Api EXtensions), as-is.
+It is licensed under the 3-Clause "New" BSD License.
+
+The gem distribution of this product includes JARs of Google API Common, as-is.
+It is licensed under the 3-Clause "New" BSD License.
+
+The gem distribution of this product includes JARs of Proto Libraries for Google APIs, as-is.
+They are licensed under the Apache Software License, Version 2.0.
+
+The gem distribution of this product includes a JAR of Cloud Storage JSON API V1, as-is.
+It is licensed under the Apache License, Version 2.0.
+
+The gem distribution of this product includes JARs of Google Auth Libraries, as-is.
+They are licensed under the 3-Clause "New" BSD License.
+
+The gem distribution of this product includes a JAR of JSON in Java (https://github.com/stleary/JSON-java), as-is.
+It is licensed under the JSON License.
