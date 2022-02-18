@@ -1,4 +1,4 @@
-package org.embulk.output;
+package org.embulk.output.gcs;
 
 import com.google.api.client.auth.oauth2.TokenResponseException;
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;

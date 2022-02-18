@@ -75,7 +75,7 @@ dependencies {
 }
 
 embulkPlugin {
-    mainClass = "org.embulk.output.GcsOutputPlugin"
+    mainClass = "org.embulk.output.gcs.GcsOutputPlugin"
     category = "output"
     type = "gcs"
 }

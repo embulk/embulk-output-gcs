@@ -1,4 +1,4 @@
-package org.embulk.output;
+package org.embulk.output.gcs;
 
 import com.google.common.base.Throwables;
 import org.embulk.EmbulkTestRuntime;
@@ -10,8 +10,8 @@ import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 
-import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER;
-import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
+import static org.embulk.output.gcs.GcsOutputPlugin.CONFIG_MAPPER;
+import static org.embulk.output.gcs.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeNotNull;
 

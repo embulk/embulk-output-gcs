@@ -1,4 +1,4 @@
-package org.embulk.output;
+package org.embulk.output.gcs;
 
 import com.google.cloud.WriteChannel;
 import com.google.cloud.storage.Blob;
@@ -17,7 +17,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
+import static org.embulk.output.gcs.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
 
 public class GcsTransactionalFileOutput implements TransactionalFileOutput
 {
