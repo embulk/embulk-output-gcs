@@ -55,14 +55,25 @@ dependencies {
     compile ("com.google.cloud:google-cloud-storage:1.2.0"){
         exclude group: 'com.google.cloud', module: 'google-cloud-core'
         exclude group: 'com.google.cloud', module: 'google-cloud-core-http'
+        exclude group: "commons-logging", module: "commons-logging"
     }
     compile ("com.google.cloud:google-cloud-core:1.2.0"){
         exclude group: 'com.google.guava', module: 'guava'
+        exclude group: "commons-logging", module: "commons-logging"
     }
     compile ("com.google.cloud:google-cloud-core-http:1.2.0"){
         exclude group: 'com.google.guava', module: 'guava'
         exclude group: 'com.google.cloud', module: 'google-cloud-core'
+        exclude group: "commons-logging", module: "commons-logging"
     }
+
+    // Instead of "commons-logging:commons-logging:1.2" that is required from "google-cloud-storage",
+    // we use "jcl-over-slf4j" because Embulk is based on SLF4J.
+    compile("org.slf4j:jcl-over-slf4j:1.7.12") {
+        // slf4j-api is in embulk-core / embulk-api.
+        exclude group: "org.slf4j", module: "slf4j-api"
+    }
+
     testCompile "junit:junit:4.12"
     testCompile "org.mockito:mockito-core:2.28.2"
     testCompile "org.embulk:embulk-core:$embulkVersion"
