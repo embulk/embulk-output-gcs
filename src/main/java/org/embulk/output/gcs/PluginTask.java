@@ -1,4 +1,4 @@
-package org.embulk.output;
+package org.embulk.output.gcs;
 
 import org.embulk.util.config.Config;
 import org.embulk.util.config.ConfigDefault;

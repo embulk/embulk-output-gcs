@@ -1,4 +1,4 @@
-package org.embulk.output;
+package org.embulk.output.gcs;
 
 import com.google.cloud.storage.Storage;
 import com.google.common.annotations.VisibleForTesting;

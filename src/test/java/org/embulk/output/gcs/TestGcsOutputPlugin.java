@@ -1,4 +1,4 @@
-package org.embulk.output;
+package org.embulk.output.gcs;
 
 import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
@@ -29,8 +29,8 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mockito;
 
-import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER;
-import static org.embulk.output.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
+import static org.embulk.output.gcs.GcsOutputPlugin.CONFIG_MAPPER;
+import static org.embulk.output.gcs.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
