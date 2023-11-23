@@ -28,10 +28,10 @@ import org.embulk.spi.TransactionalFileOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import static org.embulk.output.gcs.GcsOutputPlugin.CONFIG_MAPPER_FACTORY;
 
@@ -64,9 +64,9 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
         this.contentType = task.getContentType();
     }
 
+    @Override
     public void nextFile()
     {
-        closeCurrentWriter();
         try {
             String blobName = generateRemotePath(pathPrefix, sequenceFormat, taskIndex, fileIndex, pathSuffix);
             blobId = BlobId.of(bucket, blobName);
@@ -112,16 +112,22 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     {
         logger.info("Uploaded total {} bytes.", totalByte + byteCount);
         closeCurrentWriter();
-        //query blob again to check
-        Blob blob = client.get(blobId);
-        logger.info("Upload {} successfully.", blobId.getName());
-        storageObjects.add(blob.getBlobId().toString());
+        try {
+            //query blob again to check
+            Blob blob = client.get(blobId);
+            if (Objects.nonNull(blob)) {
+                logger.info("Upload {} successfully.", blobId.getName());
+                storageObjects.add(blob.getBlobId().toString());
+            }
+        }
+        catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     @Override
     public void close()
     {
-        closeCurrentWriter();
     }
 
     @Override
@@ -139,7 +145,7 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
 
     /**
      * GCS has character limitation in object names.
-     * @see https://cloud.google.com/storage/docs/naming#objectnames
+     * @see <a target="_blank" href="https://cloud.google.com/storage/docs/naming#objectnames">Object Names</a>
      * Although "." isn't listed at above pages, we can't access "./" path from GUI console.
      * And in many cases, user don't intend of creating "/" directory under the bucket.
      * This method normalizes path when it contains "./" and "/" and its variations at the beginning
@@ -153,13 +159,14 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
 
     private void closeCurrentWriter()
     {
-        if (writer != null && writer.isOpen()) {
-            try {
+        try {
+            if (writer != null && writer.isOpen()) {
                 writer.close();
+                writer = null;
             }
-            catch (IOException ex) {
-                throw new RuntimeException(ex);
-            }
+        }
+        catch (Exception ex) {
+            throw new RuntimeException(ex);
         }
     }
 }
