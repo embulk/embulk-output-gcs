@@ -67,6 +67,7 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     @Override
     public void nextFile()
     {
+        closeCurrentWriter();
         try {
             String blobName = generateRemotePath(pathPrefix, sequenceFormat, taskIndex, fileIndex, pathSuffix);
             blobId = BlobId.of(bucket, blobName);
@@ -128,6 +129,7 @@ public class GcsTransactionalFileOutput implements TransactionalFileOutput
     @Override
     public void close()
     {
+        closeCurrentWriter();
     }
 
     @Override
